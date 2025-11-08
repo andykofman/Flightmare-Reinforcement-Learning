@@ -1,0 +1,54 @@
+# Python
+dist
+*.egg-info
+*.so
+__pycache__
+
+
+# Gitignore
+
+# VScode
+.vscode/
+.vscode/*
+**/.vscode/*
+!.vscode/extensions.json
+
+# General
+_build/
+.sass-cache
+_posts
+_site
+
+# Learning and Documentation Files
+COMPREHENSIVE_LEARNING_GUIDE.md
+QUICK_REFERENCE.md
+LEARNING_ROADMAP.md
+LEARNING_INDEX.md
+LEARNING_README.md
+flightmare_colab_training.ipynb
+flightrl_modern.zip
+IMPLEMENTATION_SUMMARY.md
+cloud_setup.sh
+
+# Model files and checkpoints (too large for GitHub)
+*.pkl
+*.pth
+*.pt
+*.h5
+*.ckpt
+*.zip
+flightrl_modern/examples/models/
+flightrl_modern/examples/logs/
+*.tfevents.*
+*.npz
+
+# Large model files and replay buffers (exceed GitHub 100MB limit)
+*.pkl
+flightrl_modern/examples/models/**/*.pkl
+flightrl_modern/examples/models/**/*.zip
+flightrl_modern/examples/logs/**/*
+*.h5
+*.ckpt
+*.pt
+*.pth
+REPOSITORY_SETUP_GUIDE.md

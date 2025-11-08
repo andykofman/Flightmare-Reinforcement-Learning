@@ -1,0 +1,167 @@
+# Flightmare Docker - Ignore file# Exclude old deprecated RL implementation# Git files
+
+# Excludes files from Docker build context
+
+flightrl/.git
+
+# Git files
+
+.git/.gitignore
+
+.gitignore
+
+.gitattributes# Git files.gitattributes
+
+.github/
+
+.git/
+
+# Documentation
+
+docs/.gitignore# Documentation (except Docker README)
+
+*.md
+
+!README.md.gitattributes*.md
+
+
+
+# Deprecated RL implementation (EXCLUDED FROM BUILD).github/!README.md
+
+flightrl/
+
+docs/
+
+# Build artifacts
+
+build/# Documentation
+
+dist/
+
+*.egg-info/docs/# Deprecated RL implementation (excluded from build)
+
+__pycache__/
+
+*.pyc../flightrl/
+
+*.pyo
+
+*.pyd# Build artifacts
+
+.Python
+
+*.sobuild/# Build artifacts
+
+*.dylib
+
+dist/build/
+
+# IDE files
+
+.vscode/*.egg-info/dist/
+
+.idea/
+
+*.swp__pycache__/*.egg-info/
+
+*.swo
+
+*~*.pyc__pycache__/
+
+
+
+# OS files*.pyo*.pyc
+
+.DS_Store
+
+Thumbs.db*.pyd*.pyo
+
+
+
+# Test files (include in build for flightrl_modern).Python*.pyd
+
+# tests/
+
+*.so.Python
+
+# Temporary files
+
+*.log*.dylib*.so
+
+*.tmp
+
+tmp/*.dylib
+
+temp/
+
+# IDE files
+
+# Docker directory (avoid recursion)
+
+docker/.vscode/# IDE files
+
+!docker/Dockerfile
+
+!docker/README.md.idea/.vscode/
+
+
+
+# Specific excludes*.swp.idea/
+
+.pytest_cache/
+
+.coverage*.swo*.swp
+
+htmlcov/
+
+*~*.swo
+
+# ROS build artifacts (will be built in container)
+
+flightros/build/*~
+
+flightros/devel/
+
+flightros/install/# OS files
+
+
+
+# Python virtual environments.DS_Store# OS files
+
+venv/
+
+env/Thumbs.db.DS_Store
+
+ENV/
+
+.venv/Thumbs.db
+
+
+# Test files
+
+tests/# Test files
+
+tests/
+
+# Temporary files*.test
+
+*.log
+
+*.tmp# Temporary files
+
+tmp/*.log
+
+temp/*.tmp
+
+tmp/
+
+# Docker directory (avoid recursion)temp/
+
+docker/
+
+# GitHub workflows
+.github/
+
+# Docker directory itself (when building from repo root)
+docker/
+!docker/Dockerfile

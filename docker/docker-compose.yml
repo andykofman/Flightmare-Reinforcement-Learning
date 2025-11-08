@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  flightmare:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: flightmare:latest
+    container_name: flightmare
+    volumes:
+      - ..:/root/flightmare
+    ports:
+      - "10253:10253"  # ZMQ pub port for Unity
+      - "10254:10254"  # ZMQ sub port for Unity
+    stdin_open: true
+    tty: true
+    working_dir: /root/flightmare
+    environment:
+      - FLIGHTMARE_PATH=/root/flightmare
+      - PYTHONUNBUFFERED=1
+    command: /bin/bash
