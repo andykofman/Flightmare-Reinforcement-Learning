@@ -21,3 +21,11 @@ __all__ = [
     "make_flight_env",
 ]
 
+# Optional imports (may fail if dependencies not installed)
+try:
+    from flightrl_modern.tools.visualize_model import visualize_model
+    from flightrl_modern.tools.rollout_recorder import record_rollouts
+    __all__.extend(["visualize_model", "record_rollouts"])
+except ImportError:
+    pass
+

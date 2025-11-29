@@ -18,6 +18,7 @@ ruamel.yaml>=0.17.0
 # Analysis and visualization
 pandas>=1.5.0
 pillow>=9.0.0
+plotly>=5.0.0
 
 # Optional but recommended
 tqdm>=4.65.0
