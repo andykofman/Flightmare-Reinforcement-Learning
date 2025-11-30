@@ -17,8 +17,43 @@ QuadrotorEnv::QuadrotorEnv(const std::string &cfg_path)
                  0.0, 0.0, 0.0, 0.0, 0.0)
                   .finished()) {
   // load configuration file
-  YAML::Node cfg_ = YAML::LoadFile(cfg_path);
+  cfg_ = YAML::LoadFile(cfg_path);
 
+  quadrotor_ptr_ = std::make_shared<Quadrotor>();
+  // update dynamics
+  QuadrotorDynamics dynamics;
+  dynamics.updateParams(cfg_);
+  quadrotor_ptr_->updateDynamics(dynamics);
+
+  // define a bounding box
+  world_box_ << -20, 20, -20, 20, 0, 20;
+  if (!quadrotor_ptr_->setWorldBox(world_box_)) {
+    logger_.error("cannot set wolrd box");
+  };
+
+  // define input and output dimension for the environment
+  obs_dim_ = quadenv::kNObs;
+  act_dim_ = quadenv::kNAct;
+
+  Scalar mass = quadrotor_ptr_->getMass();
+  act_mean_ = Vector<quadenv::kNAct>::Ones() * (-mass * Gz) / 4;
+  act_std_ = Vector<quadenv::kNAct>::Ones() * (-mass * 2 * Gz) / 4;
+
+  // load parameters
+  loadParam(cfg_);
+}
+
+QuadrotorEnv::QuadrotorEnv(const YAML::Node &cfg_node)
+  : EnvBase(),
+    pos_coeff_(0.0),
+    ori_coeff_(0.0),
+    lin_vel_coeff_(0.0),
+    ang_vel_coeff_(0.0),
+    act_coeff_(0.0),
+    goal_state_((Vector<quadenv::kNObs>() << 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0,
+                 0.0, 0.0, 0.0, 0.0, 0.0)
+                  .finished()),
+    cfg_(cfg_node) {
   quadrotor_ptr_ = std::make_shared<Quadrotor>();
   // update dynamics
   QuadrotorDynamics dynamics;

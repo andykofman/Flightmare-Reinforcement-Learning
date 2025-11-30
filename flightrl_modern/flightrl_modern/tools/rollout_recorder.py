@@ -141,6 +141,7 @@ class RolloutRecorder:
             config_path=self.env_config_path,
             render=False,  # Always headless
             seed=self.config.seed,
+            max_episode_steps=self.config.max_steps,
         )
         
         # Detect observation dimension

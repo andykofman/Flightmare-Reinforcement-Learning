@@ -1,0 +1,35 @@
+# Target Reaching Task Configuration
+# Goal: Spawn anywhere, reach [0,0,5], and stabilize
+
+env:
+  seed: 1
+  scene_id: 0  # warehouse
+  num_envs: 1
+  num_threads: 1 
+  render: no
+
+quadrotor_env:
+  camera: no
+  sim_dt: 0.02         # 50 Hz simulation
+  max_t: 10.0          # 10 seconds per episode (longer for reaching task)
+  add_camera: no
+
+quadrotor_dynamics:
+  mass: 0.73
+  arm_l: 0.17
+  motor_omega_min: 150.0
+  motor_omega_max: 3000.0
+  motor_tau: 0.0001
+  thrust_map: [1.3298253500372892e-06, 0.0038360810526746033, -1.7689986848125325]
+  kappa: 0.016
+  omega_max: [6.0, 6.0, 6.0]
+
+# Reward coefficients - STRONGER signals for learning
+# All coefficients are negative (penalties for deviation from goal)
+rl:
+  pos_coeff: -0.1        # Position error penalty (10x stronger)
+  ori_coeff: -0.01       # Orientation error penalty  
+  lin_vel_coeff: -0.01   # Linear velocity penalty (want zero at target)
+  ang_vel_coeff: -0.01   # Angular velocity penalty
+  act_coeff: -0.001      # Small action penalty (don't over-penalize control effort)
+

@@ -1,0 +1,183 @@
+{
+  "timestamp": "2025-11-30T10:35:11.918619",
+  "total_tests": 12,
+  "passed": 12,
+  "failed": 0,
+  "warnings": 0,
+  "results": [
+    {
+      "name": "Hover Thrust Balance",
+      "passed": "True",
+      "message": "Z acceleration = -0.029 m/s\u00b2 (threshold: \u00b10.5)",
+      "metrics": {
+        "z_acceleration_m/s\u00b2": -0.029276052105823833,
+        "z_velocity_mean_m/s": "-1.0293444",
+        "z_velocity_std_m/s": "0.02535324"
+      },
+      "criteria": {
+        "max_acceleration": "\u00b10.5 m/s\u00b2"
+      }
+    },
+    {
+      "name": "Gravity Magnitude",
+      "passed": "True",
+      "message": "Measured gravity = 9.810 m/s\u00b2 (expected: ~9.81)",
+      "metrics": {
+        "gravity_magnitude_m/s\u00b2": 9.810015260429159,
+        "expected_m/s\u00b2": 9.81,
+        "error_percent": 0.00015555993026053987
+      },
+      "criteria": {
+        "range": "9.31 - 10.31 m/s\u00b2"
+      }
+    },
+    {
+      "name": "Upward Thrust Response",
+      "passed": "True",
+      "message": "Acceleration = 3.685 m/s\u00b2, displacement = 7.75m",
+      "metrics": {
+        "z_acceleration_m/s\u00b2": 3.684787119422353,
+        "z_displacement_m": "7.75128",
+        "expected_accel_m/s\u00b2": 3.9240000000000004
+      },
+      "criteria": {
+        "acceleration_range": "2.5 - 6.0 m/s\u00b2",
+        "min_displacement": "0.5m"
+      }
+    },
+    {
+      "name": "Downward Thrust Response",
+      "passed": "True",
+      "message": "Acceleration = -4.045 m/s\u00b2, displacement = -5.67m",
+      "metrics": {
+        "z_acceleration_m/s\u00b2": -4.045017575130977,
+        "z_displacement_m": "-5.6720867"
+      },
+      "criteria": {
+        "acceleration_range": "-8.0 - -2.0 m/s\u00b2"
+      }
+    },
+    {
+      "name": "Thrust Linearity",
+      "passed": "True",
+      "message": "R\u00b2 = 1.0000, slope = 19.628 m/s\u00b2 per unit action",
+      "metrics": {
+        "r_squared": 0.9999897793486431,
+        "slope": 19.627742392867024,
+        "accelerations": [
+          -5.9259888679325785,
+          -0.0050604343414306216,
+          5.850656567787636
+        ]
+      },
+      "criteria": {
+        "min_r_squared": "0.9",
+        "slope_sign": "positive"
+      }
+    },
+    {
+      "name": "Motor Differential Effects",
+      "passed": "True",
+      "message": "All motors active: True, Z variance: 0.1284",
+      "metrics": {
+        "all_motors_active": true,
+        "z_variance": "0.12843642",
+        "z_changes": [
+          "-4.6434145",
+          "-4.619968",
+          "-4.72122",
+          "-3.8384285"
+        ]
+      },
+      "criteria": {
+        "all_active": "True",
+        "min_z_variance": "0.01"
+      }
+    },
+    {
+      "name": "Differential Thrust Rotation",
+      "passed": "True",
+      "message": "Lateral displacement = 1.412m, max velocity = 1.880m/s",
+      "metrics": {
+        "xy_displacement_m": 1.4118063842906052,
+        "max_xy_velocity_m/s": "1.8802259"
+      },
+      "criteria": {
+        "min_displacement": "0.5m"
+      }
+    },
+    {
+      "name": "Position-Velocity Consistency",
+      "passed": "True",
+      "message": "Actual \u0394Z=8.203m, Integrated=8.203m, Error=0.0%",
+      "metrics": {
+        "actual_z_change_m": "8.202889",
+        "integrated_z_change_m": "8.20289",
+        "relative_error_percent": 1.16260778781907e-05
+      },
+      "criteria": {
+        "max_relative_error": "15%"
+      }
+    },
+    {
+      "name": "Velocity-Acceleration Consistency",
+      "passed": "True",
+      "message": "Actual \u0394v=5.324m/s, Expected=5.324m/s",
+      "metrics": {
+        "actual_vel_change_m/s": "5.3238754",
+        "expected_vel_change_m/s": 5.323872723298914,
+        "measured_accel_m/s\u00b2": 5.432523187039708,
+        "relative_error_percent": 5.078907680860342e-05
+      },
+      "criteria": {
+        "max_relative_error": "20%"
+      }
+    },
+    {
+      "name": "Motor Thrust Symmetry",
+      "passed": "True",
+      "message": "Acceleration CV = 1.7% (mean=-9.02, std=0.16 m/s\u00b2)",
+      "metrics": {
+        "motor_0_accel_m/s\u00b2": -9.154210166960226,
+        "motor_1_accel_m/s\u00b2": -8.75528048171782,
+        "motor_2_accel_m/s\u00b2": -9.086581771095995,
+        "motor_3_accel_m/s\u00b2": -9.082289774802565,
+        "mean_accel_m/s\u00b2": -9.01959054864415,
+        "std_accel_m/s\u00b2": 0.15524276952617108,
+        "coefficient_of_variation": 0.017211731362850792
+      },
+      "criteria": {
+        "max_cv": "30.0%"
+      }
+    },
+    {
+      "name": "PD Controller Convergence",
+      "passed": "True",
+      "message": "Min distance to target: 0.002m, Final: 0.011m",
+      "metrics": {
+        "min_distance_m": 0.0018758773803710938,
+        "final_distance_m": 0.011487483978271484,
+        "target_z_m": 5.0,
+        "converged": "True"
+      },
+      "criteria": {
+        "convergence_threshold": "0.5m"
+      }
+    },
+    {
+      "name": "Physics Equation Consistency",
+      "passed": "True",
+      "message": "Acceleration consistency: 0.0% diff, Position fit residual: 0.000m",
+      "metrics": {
+        "accel_first_half_m/s\u00b2": 2.6782056933262184,
+        "accel_second_half_m/s\u00b2": 2.678278955090947,
+        "relative_difference_percent": 0.00273544197499747,
+        "position_fit_max_residual_m": 6.317756314544454e-06
+      },
+      "criteria": {
+        "max_accel_difference": "15%",
+        "max_position_residual": "0.5m"
+      }
+    }
+  ]
+}

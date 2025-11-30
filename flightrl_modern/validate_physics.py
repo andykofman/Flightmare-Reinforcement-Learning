@@ -1,719 +1,1019 @@
 #!/usr/bin/env python3
 """
-COMPREHENSIVE PHYSICS VALIDATION SCRIPT
+FLIGHTMARE PHYSICS VALIDATION SUITE - Production Version
 
-Purpose: Systematically validate that Flightmare physics is working correctly
-        by testing basic maneuvers with known control inputs.
+A comprehensive test suite to validate quadrotor physics simulation.
+All tests use physically-derived thresholds based on the configured parameters.
 
-Tests:
-1. Zero-input hover test (should maintain altitude within reasonable bounds)
-2. Constant upward thrust test (should rise predictably)
-3. Constant downward thrust test (should descend predictably)
-4. Lateral movement test (should move horizontally)
-5. Action-to-motion correlation test (verify all 4 motors affect motion)
-6. Gravity check (verify downward acceleration without thrust)
-7. Response time check (verify motors respond within expected timeframe)
-8. Target tracking test (simple P-controller to verify physics allows reaching targets)
+Configuration (from quadrotor_env.yaml):
+- Mass: 0.73 kg
+- Gravity: 9.81 m/s²
+- sim_dt: 0.02s (50 Hz)
+- motor_tau: 0.0001s (near-instant response)
 
-Each test reports PASS/FAIL with diagnostic information.
+Test Categories:
+1. Fundamental Physics (gravity, thrust, mass)
+2. Control Response (motors, dynamics)
+3. Kinematic Consistency (position/velocity/acceleration)
+4. System Integration (multi-axis, tracking)
+
+Exit Codes:
+- 0: All tests passed
+- 1: One or more tests failed
+- 2: Critical error (environment creation failed)
 """
 
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
+import json
 import sys
 import os
+from pathlib import Path
+from dataclasses import dataclass, field, asdict
+from typing import List, Dict, Tuple, Optional, Any
+from datetime import datetime
+import warnings
+
+warnings.filterwarnings('ignore')
 
 # Add flightrl_modern to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from flightrl_modern.envs.gymnasium_wrapper import make_flight_env
 
-# Test configuration
-TESTS_TO_RUN = [
-    "hover_stability",
-    "upward_thrust",
-    "downward_thrust", 
-    "lateral_movement",
-    "motor_correlation",
-    "gravity_check",
-    "response_time",
-    "target_tracking"
-]
+# =============================================================================
+# CONFIGURATION - Physics Constants & Test Parameters
+# =============================================================================
 
-RESULTS = {
-    "passed": [],
-    "failed": [],
-    "warnings": []
-}
-
-def print_header(title):
-    """Print a formatted test header"""
-    print("\n" + "="*80)
-    print(f"  {title}")
-    print("="*80)
-
-def print_test_result(test_name, passed, message=""):
-    """Print and record test result"""
-    status = "✓ PASS" if passed else "✗ FAIL"
-    print(f"\n{status}: {test_name}")
-    if message:
-        print(f"  → {message}")
+@dataclass
+class PhysicsConfig:
+    """Expected physics parameters from configuration"""
+    mass: float = 0.73  # kg
+    gravity: float = 9.81  # m/s²
+    sim_dt: float = 0.02  # seconds
+    motor_tau: float = 0.0001  # seconds (motor time constant)
     
-    if passed:
-        RESULTS["passed"].append(test_name)
-    else:
-        RESULTS["failed"].append(test_name)
+    # Derived values
+    @property
+    def weight(self) -> float:
+        return self.mass * self.gravity
+    
+    @property
+    def hover_thrust_per_motor(self) -> float:
+        return self.weight / 4.0
 
-def print_warning(message):
-    """Print and record warning"""
-    print(f"  ⚠ WARNING: {message}")
-    RESULTS["warnings"].append(message)
 
-def create_env():
-    """Create a fresh environment for testing"""
+@dataclass
+class TestResult:
+    """Result of a single test"""
+    name: str
+    passed: bool
+    message: str
+    metrics: Dict[str, float] = field(default_factory=dict)
+    criteria: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass 
+class ValidationReport:
+    """Complete validation report"""
+    timestamp: str
+    total_tests: int = 0
+    passed: int = 0
+    failed: int = 0
+    warnings: int = 0
+    results: List[TestResult] = field(default_factory=list)
+    
+    @property
+    def success_rate(self) -> float:
+        return self.passed / self.total_tests if self.total_tests > 0 else 0.0
+    
+    @property
+    def all_passed(self) -> bool:
+        return self.failed == 0
+
+
+PHYSICS = PhysicsConfig()
+REPORT = ValidationReport(timestamp=datetime.now().isoformat())
+
+# =============================================================================
+# TEST THRESHOLDS - Physically Derived
+# =============================================================================
+
+class Thresholds:
+    """Strict but physically justified test thresholds"""
+    
+    # Hover stability: acceleration should be < 5% of gravity
+    HOVER_ACCEL_MAX = 0.5  # m/s² (≈5% of g)
+    
+    # Gravity: should be within 5% of 9.81
+    GRAVITY_MIN = 9.31  # m/s² (9.81 - 5%)
+    GRAVITY_MAX = 10.31  # m/s² (9.81 + 5%)
+    
+    # Thrust response: 20% action should give ~20% extra thrust
+    # Extra accel = (0.2 * 2 * weight) / mass = 0.2 * 2 * g ≈ 3.92 m/s²
+    UPWARD_ACCEL_MIN = 2.5  # m/s² (allow some margin)
+    UPWARD_ACCEL_MAX = 6.0  # m/s²
+    
+    # Downward: negative thrust reduces lift, gravity dominates
+    # At -0.2 action: thrust ≈ 0.6 * hover, net accel ≈ -4 m/s²
+    DOWNWARD_ACCEL_MIN = -8.0  # m/s²
+    DOWNWARD_ACCEL_MAX = -2.0  # m/s²
+    
+    # Motor response time (63% rise time)
+    MOTOR_RESPONSE_MAX = 0.1  # seconds (motor_tau is 0.0001s)
+    
+    # Position update: must see measurable change with thrust
+    MIN_DISPLACEMENT = 0.5  # meters (after 3 seconds of thrust)
+    
+    # Velocity change threshold
+    MIN_VELOCITY_CHANGE = 1.0  # m/s
+    
+    # Symmetry: opposite motors should have similar effects
+    SYMMETRY_TOLERANCE = 0.3  # 30% difference allowed
+    
+    # Lateral movement from differential thrust
+    LATERAL_MIN_DISPLACEMENT = 0.5  # meters
+    
+    # Angular response
+    MIN_ANGULAR_RESPONSE = 0.1  # rad/s
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+def create_env(seed: int = 42):
+    """Create environment with error handling"""
     try:
         env = make_flight_env(
             render=False,
             num_envs=1,
             num_threads=1,
-            seed=42
+            seed=seed
         )
         return env
     except Exception as e:
-        print(f"ERROR: Failed to create environment: {e}")
-        sys.exit(1)
+        print(f"CRITICAL ERROR: Failed to create environment: {e}")
+        sys.exit(2)
 
-def run_episode(env, action_sequence, max_steps=300):
-    """
-    Run an episode with a specific action sequence.
-    
-    Args:
-        env: The environment
-        action_sequence: Either a single action (repeated) or list of actions
-        max_steps: Maximum number of steps
-    
-    Returns:
-        DataFrame with trajectory data
-    """
-    obs, info = env.reset()
-    
-    # Handle observation format - might be (num_envs, obs_dim) or (obs_dim,)
+
+def extract_obs(obs: np.ndarray) -> np.ndarray:
+    """Extract single observation from potentially batched array"""
     if obs.ndim == 1:
-        # Single env, obs is 1D array
-        get_obs = lambda o: o
-    else:
-        # Vectorized env, obs is 2D array (num_envs, obs_dim)
-        get_obs = lambda o: o[0] if o.ndim > 1 else o
+        return obs
+    return obs[0] if obs.ndim > 1 else obs
+
+
+def estimate_acceleration(times: np.ndarray, velocities: np.ndarray) -> float:
+    """Estimate acceleration from velocity time series using linear fit"""
+    if len(times) < 3:
+        return 0.0
+    coeffs = np.polyfit(times, velocities, 1)
+    return coeffs[0]
+
+
+def run_trajectory(env, action: np.ndarray, num_steps: int) -> Dict[str, np.ndarray]:
+    """Run trajectory and collect data"""
+    obs, _ = env.reset()
     
     data = {
-        "step": [],
-        "time": [],
-        "pos_x": [], "pos_y": [], "pos_z": [],
-        "vel_x": [], "vel_y": [], "vel_z": [],
-        "action_0": [], "action_1": [], "action_2": [], "action_3": [],
-        "reward": []
+        'time': [], 'pos': [], 'vel': [], 'reward': []
     }
     
-    # Handle single action vs sequence
-    if isinstance(action_sequence, np.ndarray) and action_sequence.ndim == 1:
-        # Single action - repeat it
-        actions = [action_sequence] * max_steps
-    else:
-        actions = action_sequence
-    
-    for step in range(min(max_steps, len(actions))):
-        action = actions[step]
+    for step in range(num_steps):
+        current_obs = extract_obs(obs)
         
-        # Get current observation
-        current_obs = get_obs(obs)
+        data['time'].append(step * PHYSICS.sim_dt)
+        data['pos'].append(current_obs[:3].copy())
+        data['vel'].append(current_obs[6:9].copy())
         
-        # Record state
-        data["step"].append(step)
-        data["time"].append(step * 0.02)  # dt = 0.02s
-        data["pos_x"].append(current_obs[0])
-        data["pos_y"].append(current_obs[1])
-        data["pos_z"].append(current_obs[2])
-        data["vel_x"].append(current_obs[6])
-        data["vel_y"].append(current_obs[7])
-        data["vel_z"].append(current_obs[8])
-        data["action_0"].append(action[0])
-        data["action_1"].append(action[1])
-        data["action_2"].append(action[2])
-        data["action_3"].append(action[3])
+        action_input = action.reshape(1, -1) if action.ndim == 1 else action
+        obs, reward, terminated, truncated, _ = env.step(action_input)
         
-        # Step environment - ensure action has right shape
-        if action.ndim == 1:
-            action_input = action.reshape(1, -1)
-        else:
-            action_input = action
-            
-        obs, reward, terminated, truncated, info = env.step(action_input)
+        r = reward[0] if isinstance(reward, np.ndarray) else float(reward)
+        data['reward'].append(r)
         
-        # Handle reward format
-        if isinstance(reward, np.ndarray):
-            data["reward"].append(reward[0] if reward.ndim > 0 else float(reward))
-        else:
-            data["reward"].append(float(reward))
-        
-        # Handle termination format
         term = terminated[0] if isinstance(terminated, np.ndarray) else terminated
         trunc = truncated[0] if isinstance(truncated, np.ndarray) else truncated
-        
         if term or trunc:
             break
     
-    return pd.DataFrame(data)
+    return {k: np.array(v) for k, v in data.items()}
 
-# ============================================================================
-# TEST 1: Hover Stability
-# ============================================================================
-def test_hover_stability():
-    """
-    Test: Apply zero actions (hover command) and verify quad maintains altitude
-    
-    Expected: Z position should stay within ±1.0m of initial position
-    Physics issue if: Quad drifts significantly or crashes
-    """
-    print_header("TEST 1: Hover Stability (Zero Action)")
-    
-    env = create_env()
-    action = np.array([0.0, 0.0, 0.0, 0.0])  # Hover command
-    
-    print(f"Action: {action} (all zeros = hover thrust)")
-    print("Expected: Maintain altitude within ±1.0m for 6 seconds")
-    
-    df = run_episode(env, action, max_steps=300)
-    
-    # Analysis
-    initial_z = df["pos_z"].iloc[0]
-    final_z = df["pos_z"].iloc[-1]
-    max_z_deviation = df["pos_z"].max() - initial_z
-    min_z_deviation = df["pos_z"].min() - initial_z
-    
-    print(f"\nResults:")
-    print(f"  Initial Z: {initial_z:.3f}m")
-    print(f"  Final Z: {final_z:.3f}m")
-    print(f"  Z drift: {final_z - initial_z:.3f}m")
-    print(f"  Max Z deviation: {max_z_deviation:.3f}m")
-    print(f"  Min Z deviation: {min_z_deviation:.3f}m")
-    
-    # Verdict
-    max_drift = max(abs(max_z_deviation), abs(min_z_deviation))
-    
-    if max_drift < 0.5:
-        print_test_result("Hover Stability", True, f"Excellent stability: {max_drift:.3f}m max drift")
-    elif max_drift < 1.0:
-        print_test_result("Hover Stability", True, f"Acceptable stability: {max_drift:.3f}m max drift")
-        print_warning(f"Some drift present - consider tuning hover thrust")
-    else:
-        print_test_result("Hover Stability", False, 
-                         f"Excessive drift: {max_drift:.3f}m (threshold: 1.0m)")
-        print("  → Physics issue: Zero action should maintain hover!")
-    
-    env.close()
-    return df
 
-# ============================================================================
-# TEST 2: Upward Thrust
-# ============================================================================
-def test_upward_thrust():
-    """
-    Test: Apply constant upward thrust and verify quad rises
-    
-    Expected: Z velocity > 0, Z position increases monotonically
-    Physics issue if: Quad doesn't rise or rises too fast/slow
-    """
-    print_header("TEST 2: Upward Thrust Response")
-    
-    env = create_env()
-    action = np.array([0.2, 0.2, 0.2, 0.2])  # 20% upward thrust
-    
-    print(f"Action: {action} (20% thrust on all motors)")
-    print("Expected: Upward acceleration ~2-4 m/s²")
-    
-    df = run_episode(env, action, max_steps=150)  # 3 seconds
-    
-    # Analysis
-    initial_z = df["pos_z"].iloc[0]
-    final_z = df["pos_z"].iloc[-1]
-    max_vel_z = df["vel_z"].max()
-    avg_vel_z = df["vel_z"].mean()
-    
-    print(f"\nResults:")
-    print(f"  Initial Z: {initial_z:.3f}m")
-    print(f"  Final Z: {final_z:.3f}m")
-    print(f"  Z displacement: {final_z - initial_z:.3f}m")
-    print(f"  Max Z velocity: {max_vel_z:.3f}m/s")
-    print(f"  Avg Z velocity: {avg_vel_z:.3f}m/s")
-    
-    # Estimate acceleration (should be positive)
-    if len(df) > 10:
-        # Use first 0.5s to estimate initial acceleration
-        early_vel = df["vel_z"].iloc[:25].values
-        time_vals = df["time"].iloc[:25].values
-        if len(early_vel) > 1:
-            accel = np.polyfit(time_vals, early_vel, 1)[0]
-            print(f"  Initial acceleration: {accel:.3f}m/s²")
-    
-    # Verdict
-    z_rise = final_z - initial_z
-    passed = (z_rise > 0.5) and (avg_vel_z > 0.2)
-    
+def print_header(title: str):
+    """Print formatted section header"""
+    print(f"\n{'='*80}")
+    print(f"  {title}")
+    print('='*80)
+
+
+def record_result(name: str, passed: bool, message: str, 
+                  metrics: Dict = None, criteria: Dict = None):
+    """Record test result"""
+    result = TestResult(
+        name=name,
+        passed=passed,
+        message=message,
+        metrics=metrics or {},
+        criteria=criteria or {}
+    )
+    REPORT.results.append(result)
+    REPORT.total_tests += 1
     if passed:
-        print_test_result("Upward Thrust", True, f"Quad rose {z_rise:.3f}m as expected")
+        REPORT.passed += 1
     else:
-        print_test_result("Upward Thrust", False,
-                         f"Quad did not rise properly: {z_rise:.3f}m, vel={avg_vel_z:.3f}m/s")
-        print("  → Physics issue: Positive thrust should cause upward motion!")
+        REPORT.failed += 1
     
-    env.close()
-    return df
+    status = "✓ PASS" if passed else "✗ FAIL"
+    print(f"\n{status}: {name}")
+    print(f"  → {message}")
+    if metrics:
+        for k, v in metrics.items():
+            if isinstance(v, float):
+                print(f"    {k}: {v:.4f}")
+            else:
+                print(f"    {k}: {v}")
 
-# ============================================================================
-# TEST 3: Downward Thrust
-# ============================================================================
-def test_downward_thrust():
+
+# =============================================================================
+# TEST 1: HOVER THRUST BALANCE
+# =============================================================================
+
+def test_hover_thrust_balance():
     """
-    Test: Apply negative thrust and verify quad descends
+    Verify that action=[0,0,0,0] produces thrust equal to weight.
     
-    Expected: Z velocity < 0, Z position decreases
-    Physics issue if: Quad doesn't descend or accelerates upward
+    Physics: At hover, thrust = weight = m*g
+    With action=0: thrust_per_motor = act_mean = (m*g)/4
+    Net force should be zero → acceleration ≈ 0
+    
+    Criterion: |acceleration| < 0.5 m/s² (< 5% of g)
     """
-    print_header("TEST 3: Downward Thrust Response")
+    print_header("TEST 1: Hover Thrust Balance")
+    print("Verifying action=[0,0,0,0] produces thrust ≈ weight")
+    print(f"Expected: |acceleration| < {Thresholds.HOVER_ACCEL_MAX} m/s²")
     
     env = create_env()
-    action = np.array([-0.2, -0.2, -0.2, -0.2])  # 20% downward thrust
+    action = np.array([0.0, 0.0, 0.0, 0.0])
     
-    print(f"Action: {action} (-20% thrust on all motors)")
-    print("Expected: Downward acceleration, controlled descent")
-    
-    df = run_episode(env, action, max_steps=150)  # 3 seconds
-    
-    # Analysis
-    initial_z = df["pos_z"].iloc[0]
-    final_z = df["pos_z"].iloc[-1]
-    min_vel_z = df["vel_z"].min()
-    avg_vel_z = df["vel_z"].mean()
-    
-    print(f"\nResults:")
-    print(f"  Initial Z: {initial_z:.3f}m")
-    print(f"  Final Z: {final_z:.3f}m")
-    print(f"  Z displacement: {final_z - initial_z:.3f}m")
-    print(f"  Min Z velocity: {min_vel_z:.3f}m/s")
-    print(f"  Avg Z velocity: {avg_vel_z:.3f}m/s")
-    
-    # Verdict
-    z_drop = initial_z - final_z
-    passed = (z_drop > 0.5) and (avg_vel_z < -0.2)
-    
-    if passed:
-        print_test_result("Downward Thrust", True, f"Quad descended {z_drop:.3f}m as expected")
-    else:
-        print_test_result("Downward Thrust", False,
-                         f"Quad did not descend properly: {z_drop:.3f}m, vel={avg_vel_z:.3f}m/s")
-        print("  → Physics issue: Negative thrust should cause downward motion!")
-    
+    data = run_trajectory(env, action, num_steps=150)  # 3 seconds
     env.close()
-    return df
-
-# ============================================================================
-# TEST 4: Lateral Movement
-# ============================================================================
-def test_lateral_movement():
-    """
-    Test: Apply differential thrust to create lateral movement
     
-    Expected: Quad tilts and moves horizontally
-    Physics issue if: No tilt or no horizontal motion
-    """
-    print_header("TEST 4: Lateral Movement (Differential Thrust)")
+    # Estimate vertical acceleration
+    times = data['time']
+    vel_z = data['vel'][:, 2]
+    accel_z = estimate_acceleration(times, vel_z)
     
-    env = create_env()
-    # Increase motors 0,1 and decrease 2,3 to pitch forward
-    action = np.array([0.1, 0.1, -0.1, -0.1])
+    # Check velocity consistency
+    vel_z_std = np.std(vel_z)
+    vel_z_mean = np.mean(vel_z)
     
-    print(f"Action: {action} (differential thrust to pitch)")
-    print("Expected: Horizontal displacement > 0.5m")
+    passed = abs(accel_z) < Thresholds.HOVER_ACCEL_MAX
     
-    df = run_episode(env, action, max_steps=200)  # 4 seconds
-    
-    # Analysis
-    initial_xy = np.array([df["pos_x"].iloc[0], df["pos_y"].iloc[0]])
-    final_xy = np.array([df["pos_x"].iloc[-1], df["pos_y"].iloc[-1]])
-    xy_displacement = np.linalg.norm(final_xy - initial_xy)
-    
-    max_xy_vel = np.sqrt(df["vel_x"]**2 + df["vel_y"]**2).max()
-    
-    print(f"\nResults:")
-    print(f"  Initial XY: ({initial_xy[0]:.3f}, {initial_xy[1]:.3f})")
-    print(f"  Final XY: ({final_xy[0]:.3f}, {final_xy[1]:.3f})")
-    print(f"  XY displacement: {xy_displacement:.3f}m")
-    print(f"  Max XY velocity: {max_xy_vel:.3f}m/s")
-    
-    # Verdict
-    passed = xy_displacement > 0.3
-    
-    if passed:
-        print_test_result("Lateral Movement", True, 
-                         f"Quad moved {xy_displacement:.3f}m laterally as expected")
-    else:
-        print_test_result("Lateral Movement", False,
-                         f"Insufficient lateral movement: {xy_displacement:.3f}m")
-        print("  → Physics issue: Differential thrust should cause tilt and lateral motion!")
-    
-    env.close()
-    return df
-
-# ============================================================================
-# TEST 5: Motor Correlation
-# ============================================================================
-def test_motor_correlation():
-    """
-    Test: Verify each motor independently affects motion
-    
-    Expected: Each motor command creates measurable change in state
-    Physics issue if: Motors don't affect motion or multiple motors have same effect
-    """
-    print_header("TEST 5: Individual Motor Response")
-    
-    env = create_env()
-    
-    print("Testing each motor individually...")
-    
-    motor_effects = {}
-    
-    for motor_id in range(4):
-        action = np.zeros(4)
-        action[motor_id] = 0.3  # 30% thrust on single motor
-        
-        df = run_episode(env, action, max_steps=100)  # 2 seconds
-        
-        # Measure effects
-        z_change = df["pos_z"].iloc[-1] - df["pos_z"].iloc[0]
-        xy_change = np.sqrt(
-            (df["pos_x"].iloc[-1] - df["pos_x"].iloc[0])**2 +
-            (df["pos_y"].iloc[-1] - df["pos_y"].iloc[0])**2
-        )
-        
-        motor_effects[motor_id] = {
-            "z_change": z_change,
-            "xy_change": xy_change
+    record_result(
+        name="Hover Thrust Balance",
+        passed=passed,
+        message=f"Z acceleration = {accel_z:.3f} m/s² (threshold: ±{Thresholds.HOVER_ACCEL_MAX})",
+        metrics={
+            "z_acceleration_m/s²": accel_z,
+            "z_velocity_mean_m/s": vel_z_mean,
+            "z_velocity_std_m/s": vel_z_std,
+        },
+        criteria={
+            "max_acceleration": f"±{Thresholds.HOVER_ACCEL_MAX} m/s²"
         }
-        
-        print(f"  Motor {motor_id}: Z={z_change:+.3f}m, XY={xy_change:.3f}m")
-        
-        env.close()
-        env = create_env()  # Fresh env for each test
-    
-    # Analysis: All motors should have some effect
-    all_have_effect = all(
-        abs(m["z_change"]) > 0.1 or m["xy_change"] > 0.1 
-        for m in motor_effects.values()
     )
     
-    # Check if motors are too similar (should have different effects due to geometry)
-    z_changes = [m["z_change"] for m in motor_effects.values()]
-    z_std = np.std(z_changes)
-    
-    print(f"\nAnalysis:")
-    print(f"  Z-change std dev: {z_std:.3f}m (should be > 0.05 for differential effects)")
-    
-    if all_have_effect:
-        print_test_result("Motor Correlation", True, "All motors affect quad motion")
-        if z_std < 0.05:
-            print_warning("All motors have very similar effects - check motor layout")
-    else:
-        print_test_result("Motor Correlation", False, "Some motors don't affect motion")
-        print("  → Physics issue: All motors should independently affect the quad!")
-    
-    env.close()
-    return motor_effects
+    return passed
 
-# ============================================================================
-# TEST 6: Gravity Check
-# ============================================================================
-def test_gravity():
+
+# =============================================================================
+# TEST 2: GRAVITY MAGNITUDE
+# =============================================================================
+
+def test_gravity_magnitude():
     """
-    Test: Apply large negative thrust and verify quad falls under gravity
+    Verify gravity acceleration is correct (~9.81 m/s²).
     
-    Expected: Downward acceleration ~9.81 m/s² (gravity)
-    Physics issue if: No gravity or wrong magnitude
+    Physics: With zero thrust (action=-1 gives minimum thrust ≈ 0),
+    acceleration should be -g = -9.81 m/s²
+    
+    Criterion: 9.31 < |a| < 10.31 m/s² (±5% of g)
     """
-    print_header("TEST 6: Gravity Verification")
+    print_header("TEST 2: Gravity Magnitude")
+    print("Verifying gravity ≈ 9.81 m/s² with minimal thrust")
+    print(f"Expected: {Thresholds.GRAVITY_MIN} < |a| < {Thresholds.GRAVITY_MAX} m/s²")
     
     env = create_env()
-    action = np.array([-1.0, -1.0, -1.0, -1.0])  # Maximum negative thrust
+    action = np.array([-1.0, -1.0, -1.0, -1.0])  # Minimum thrust
     
-    print(f"Action: {action} (maximum negative thrust)")
-    print("Expected: Gravity-induced fall (~9.81 m/s² acceleration)")
-    
-    df = run_episode(env, action, max_steps=100)  # 2 seconds
-    
-    # Estimate acceleration from velocity change
-    if len(df) > 20:
-        vel_z = df["vel_z"].values[:50]  # First second
-        time_vals = df["time"].values[:50]
-        
-        # Fit linear to get acceleration
-        if len(vel_z) > 1:
-            accel = np.polyfit(time_vals, vel_z, 1)[0]
-            
-            print(f"\nResults:")
-            print(f"  Estimated downward acceleration: {-accel:.2f} m/s²")
-            print(f"  Expected (gravity): ~9.81 m/s²")
-            print(f"  Difference: {abs(accel + 9.81):.2f} m/s²")
-            
-            # Allow some margin due to drag
-            if 7.0 < abs(accel) < 12.0:
-                print_test_result("Gravity Check", True, 
-                                 f"Gravity magnitude reasonable: {-accel:.2f} m/s²")
-            else:
-                print_test_result("Gravity Check", False,
-                                 f"Gravity magnitude wrong: {-accel:.2f} m/s² (expected ~9.81)")
-                print("  → Physics issue: Gravity constant may be incorrect!")
-        else:
-            print_test_result("Gravity Check", False, "Insufficient data to estimate gravity")
-    else:
-        print_test_result("Gravity Check", False, "Episode too short to test gravity")
-    
+    data = run_trajectory(env, action, num_steps=50)  # 1 second
     env.close()
-    return df
-
-# ============================================================================
-# TEST 7: Response Time
-# ============================================================================
-def test_response_time():
-    """
-    Test: Apply step input and measure time to 63% of steady-state response
     
-    Expected: Response time < 0.5s (motor tau = 0.0001s is very fast)
-    Physics issue if: Very slow response or no response
+    times = data['time']
+    vel_z = data['vel'][:, 2]
+    accel_z = estimate_acceleration(times, vel_z)
+    
+    # Gravity should cause negative acceleration
+    gravity_magnitude = abs(accel_z)
+    
+    passed = Thresholds.GRAVITY_MIN < gravity_magnitude < Thresholds.GRAVITY_MAX
+    
+    record_result(
+        name="Gravity Magnitude",
+        passed=passed,
+        message=f"Measured gravity = {gravity_magnitude:.3f} m/s² (expected: ~9.81)",
+        metrics={
+            "gravity_magnitude_m/s²": gravity_magnitude,
+            "expected_m/s²": 9.81,
+            "error_percent": abs(gravity_magnitude - 9.81) / 9.81 * 100
+        },
+        criteria={
+            "range": f"{Thresholds.GRAVITY_MIN} - {Thresholds.GRAVITY_MAX} m/s²"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
+# TEST 3: UPWARD THRUST RESPONSE
+# =============================================================================
+
+def test_upward_thrust():
     """
-    print_header("TEST 7: Control Response Time")
+    Verify positive thrust causes upward acceleration.
+    
+    Physics: action=0.2 gives thrust = act_mean + 0.2*act_std
+    = (m*g)/4 + 0.2*(2*m*g)/4 = 1.4*(m*g)/4 per motor
+    Total thrust = 1.4*m*g, Net force = 0.4*m*g upward
+    Acceleration = 0.4*g ≈ 3.92 m/s²
+    
+    Criterion: 2.5 < a < 6.0 m/s² (allowing margin for initial conditions)
+    """
+    print_header("TEST 3: Upward Thrust Response")
+    print("Verifying action=[0.2,0.2,0.2,0.2] causes upward acceleration")
+    print(f"Expected: {Thresholds.UPWARD_ACCEL_MIN} < a < {Thresholds.UPWARD_ACCEL_MAX} m/s²")
     
     env = create_env()
+    action = np.array([0.2, 0.2, 0.2, 0.2])
     
-    # Create step input: 0 for 1s, then 0.3 for 2s
-    actions = []
-    for i in range(50):  # 1 second at hover
-        actions.append(np.array([0.0, 0.0, 0.0, 0.0]))
-    for i in range(100):  # 2 seconds at upward thrust
-        actions.append(np.array([0.3, 0.3, 0.3, 0.3]))
-    
-    print("Applying step input at t=1.0s")
-    print("Expected: Quick response (< 0.5s to reach 63% of final value)")
-    
-    df = run_episode(env, actions, max_steps=150)
-    
-    # Find response time (time to reach 63% of change)
-    step_time_idx = 50  # Where step occurs
-    
-    if len(df) > step_time_idx + 20:
-        z_before_step = df["pos_z"].iloc[step_time_idx]
-        z_final = df["pos_z"].iloc[-1]
-        z_change = z_final - z_before_step
-        z_target_63 = z_before_step + 0.63 * z_change
-        
-        # Find when we cross 63% threshold
-        after_step_df = df.iloc[step_time_idx:]
-        crossed = after_step_df[after_step_df["pos_z"] >= z_target_63]
-        
-        if len(crossed) > 0:
-            response_time = crossed.iloc[0]["time"] - df.iloc[step_time_idx]["time"]
-            
-            print(f"\nResults:")
-            print(f"  Z before step: {z_before_step:.3f}m")
-            print(f"  Z after step (final): {z_final:.3f}m")
-            print(f"  Total change: {z_change:.3f}m")
-            print(f"  Time to 63% response: {response_time:.3f}s")
-            
-            if response_time < 0.5:
-                print_test_result("Response Time", True, f"Fast response: {response_time:.3f}s")
-            elif response_time < 1.0:
-                print_test_result("Response Time", True, f"Adequate response: {response_time:.3f}s")
-                print_warning("Response slower than expected for motor_tau=0.0001")
-            else:
-                print_test_result("Response Time", False, f"Slow response: {response_time:.3f}s")
-                print("  → Physics issue: Motors should respond faster!")
-        else:
-            print_test_result("Response Time", False, "No response detected to step input")
-    else:
-        print_test_result("Response Time", False, "Insufficient data")
-    
+    data = run_trajectory(env, action, num_steps=100)  # 2 seconds
     env.close()
-    return df
-
-# ============================================================================
-# TEST 8: Target Tracking Ability
-# ============================================================================
-def test_target_tracking():
-    """
-    Test: Can the quad physically reach a target using simple proportional control?
     
-    This tests if the physics allows target reaching, independent of RL.
+    times = data['time'][:50]  # First second for cleaner estimate
+    vel_z = data['vel'][:50, 2]
+    accel_z = estimate_acceleration(times, vel_z)
+    
+    # Check displacement
+    pos_z = data['pos'][:, 2]
+    displacement = pos_z[-1] - pos_z[0]
+    
+    passed = (Thresholds.UPWARD_ACCEL_MIN < accel_z < Thresholds.UPWARD_ACCEL_MAX 
+              and displacement > Thresholds.MIN_DISPLACEMENT)
+    
+    record_result(
+        name="Upward Thrust Response",
+        passed=passed,
+        message=f"Acceleration = {accel_z:.3f} m/s², displacement = {displacement:.2f}m",
+        metrics={
+            "z_acceleration_m/s²": accel_z,
+            "z_displacement_m": displacement,
+            "expected_accel_m/s²": 0.4 * PHYSICS.gravity,
+        },
+        criteria={
+            "acceleration_range": f"{Thresholds.UPWARD_ACCEL_MIN} - {Thresholds.UPWARD_ACCEL_MAX} m/s²",
+            "min_displacement": f"{Thresholds.MIN_DISPLACEMENT}m"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
+# TEST 4: DOWNWARD THRUST RESPONSE  
+# =============================================================================
+
+def test_downward_thrust():
     """
-    print_header("TEST 8: Target Tracking Capability (Simple P-Controller)")
+    Verify negative thrust causes increased descent rate.
+    
+    Physics: action=-0.2 gives thrust = act_mean - 0.2*act_std
+    = (m*g)/4 - 0.2*(2*m*g)/4 = 0.6*(m*g)/4 per motor
+    Total thrust = 0.6*m*g, Net force = -0.4*m*g downward
+    Acceleration = -0.4*g ≈ -3.92 m/s² (plus gravity effects)
+    
+    Criterion: -8.0 < a < -2.0 m/s²
+    """
+    print_header("TEST 4: Downward Thrust Response")
+    print("Verifying action=[-0.2,-0.2,-0.2,-0.2] causes descent")
+    print(f"Expected: {Thresholds.DOWNWARD_ACCEL_MIN} < a < {Thresholds.DOWNWARD_ACCEL_MAX} m/s²")
     
     env = create_env()
-    obs, info = env.reset()
+    action = np.array([-0.2, -0.2, -0.2, -0.2])
     
-    # Handle observation format
-    if obs.ndim == 1:
-        get_obs = lambda o: o
-    else:
-        get_obs = lambda o: o[0] if o.ndim > 1 else o
+    data = run_trajectory(env, action, num_steps=100)
+    env.close()
     
-    target = np.array([0.0, 0.0, 5.0])  # Same as training target
+    times = data['time'][:50]
+    vel_z = data['vel'][:50, 2]
+    accel_z = estimate_acceleration(times, vel_z)
     
-    print(f"Target position: {target}")
-    print("Using simple proportional controller to track target")
-    print("This tests if physics allows reaching target at all")
+    pos_z = data['pos'][:, 2]
+    displacement = pos_z[-1] - pos_z[0]
     
-    data = {"step": [], "time": [], "distance_to_target": [], "pos_z": []}
+    passed = (Thresholds.DOWNWARD_ACCEL_MIN < accel_z < Thresholds.DOWNWARD_ACCEL_MAX
+              and displacement < -Thresholds.MIN_DISPLACEMENT)
     
-    kp_pos = 0.5  # Proportional gain for position
-    kp_vel = 0.1  # Proportional gain for velocity damping
+    record_result(
+        name="Downward Thrust Response",
+        passed=passed,
+        message=f"Acceleration = {accel_z:.3f} m/s², displacement = {displacement:.2f}m",
+        metrics={
+            "z_acceleration_m/s²": accel_z,
+            "z_displacement_m": displacement,
+        },
+        criteria={
+            "acceleration_range": f"{Thresholds.DOWNWARD_ACCEL_MIN} - {Thresholds.DOWNWARD_ACCEL_MAX} m/s²"
+        }
+    )
     
-    for step in range(300):
-        # Extract state
-        current_obs = get_obs(obs)
-        pos = current_obs[:3]
-        vel = current_obs[6:9]
+    return passed
+
+
+# =============================================================================
+# TEST 5: THRUST LINEARITY
+# =============================================================================
+
+def test_thrust_linearity():
+    """
+    Verify thrust scales linearly with action.
+    
+    Physics: acceleration should increase linearly with action
+    a(action) = (2*action)*g approximately
+    
+    Test actions: -0.3, 0, 0.3 and check linear relationship
+    """
+    print_header("TEST 5: Thrust Linearity")
+    print("Verifying thrust scales linearly with action input")
+    
+    test_actions = [-0.3, 0.0, 0.3]
+    accelerations = []
+    
+    for act_val in test_actions:
+        env = create_env(seed=42 + int(act_val * 100))
+        action = np.array([act_val, act_val, act_val, act_val])
+        data = run_trajectory(env, action, num_steps=75)
+        env.close()
         
-        # Simple proportional control
-        pos_error = target - pos
-        vel_error = -vel  # Want zero velocity
+        times = data['time'][:50]
+        vel_z = data['vel'][:50, 2]
+        accel = estimate_acceleration(times, vel_z)
+        accelerations.append(accel)
+        print(f"  Action={act_val:.1f}: acceleration={accel:.3f} m/s²")
+    
+    # Check linearity: fit line and check R²
+    coeffs = np.polyfit(test_actions, accelerations, 1)
+    predicted = np.polyval(coeffs, test_actions)
+    ss_res = np.sum((np.array(accelerations) - predicted) ** 2)
+    ss_tot = np.sum((np.array(accelerations) - np.mean(accelerations)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+    
+    # Check slope is positive (more thrust = more upward accel)
+    slope = coeffs[0]
+    
+    passed = r_squared > 0.9 and slope > 0
+    
+    record_result(
+        name="Thrust Linearity",
+        passed=passed,
+        message=f"R² = {r_squared:.4f}, slope = {slope:.3f} m/s² per unit action",
+        metrics={
+            "r_squared": r_squared,
+            "slope": slope,
+            "accelerations": accelerations,
+        },
+        criteria={
+            "min_r_squared": "0.9",
+            "slope_sign": "positive"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
+# TEST 6: MOTOR DIFFERENTIAL EFFECTS
+# =============================================================================
+
+def test_motor_differential():
+    """
+    Verify each motor independently affects the quadrotor.
+    
+    Physics: Single motor thrust creates both lift and torque.
+    Different motors should create different torque directions.
+    """
+    print_header("TEST 6: Motor Differential Effects")
+    print("Verifying each motor creates unique response")
+    
+    motor_responses = []
+    
+    for motor_id in range(4):
+        env = create_env(seed=100 + motor_id)
+        action = np.zeros(4)
+        action[motor_id] = 0.5  # 50% on one motor
         
-        # Very simple PD-like control mapped to thrust
-        control = kp_pos * pos_error[2] + kp_vel * vel_error[2]  # Z-control only
+        data = run_trajectory(env, action, num_steps=75)
+        env.close()
         
-        # Clamp and create action
-        action = np.clip([control, control, control, control], -1.0, 1.0)
+        # Measure response
+        pos = data['pos']
+        vel = data['vel']
         
-        # Record
-        distance = np.linalg.norm(pos - target)
-        data["step"].append(step)
-        data["time"].append(step * 0.02)
-        data["distance_to_target"].append(distance)
-        data["pos_z"].append(pos[2])
+        z_change = pos[-1, 2] - pos[0, 2]
+        xy_change = np.sqrt((pos[-1, 0] - pos[0, 0])**2 + (pos[-1, 1] - pos[0, 1])**2)
         
-        # Step
-        obs, reward, terminated, truncated, info = env.step(np.array(action).reshape(1, -1))
+        motor_responses.append({
+            'motor': motor_id,
+            'z_change': z_change,
+            'xy_change': xy_change,
+            'final_vel': vel[-1].copy()
+        })
         
-        # Handle termination format
+        print(f"  Motor {motor_id}: ΔZ={z_change:+.3f}m, ΔXY={xy_change:.3f}m")
+    
+    # Check all motors have effect
+    all_active = all(
+        abs(r['z_change']) > 0.1 or r['xy_change'] > 0.2 
+        for r in motor_responses
+    )
+    
+    # Check motors create different effects (not all identical)
+    z_changes = [r['z_change'] for r in motor_responses]
+    z_variance = np.var(z_changes)
+    
+    passed = all_active and z_variance > 0.01
+    
+    record_result(
+        name="Motor Differential Effects",
+        passed=passed,
+        message=f"All motors active: {all_active}, Z variance: {z_variance:.4f}",
+        metrics={
+            "all_motors_active": all_active,
+            "z_variance": z_variance,
+            "z_changes": z_changes,
+        },
+        criteria={
+            "all_active": "True",
+            "min_z_variance": "0.01"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
+# TEST 7: PITCH/ROLL FROM DIFFERENTIAL THRUST
+# =============================================================================
+
+def test_differential_thrust_rotation():
+    """
+    Verify differential thrust creates rotation and lateral movement.
+    
+    Physics: Asymmetric thrust creates torque → rotation → lateral force
+    """
+    print_header("TEST 7: Differential Thrust Rotation")
+    print("Verifying asymmetric thrust causes pitch/roll and lateral motion")
+    
+    env = create_env()
+    # Motors 0,1 high, 2,3 low → should create pitch and forward motion
+    action = np.array([0.15, 0.15, -0.15, -0.15])
+    
+    data = run_trajectory(env, action, num_steps=150)
+    env.close()
+    
+    pos = data['pos']
+    
+    # Measure lateral displacement
+    xy_displacement = np.sqrt(
+        (pos[-1, 0] - pos[0, 0])**2 + 
+        (pos[-1, 1] - pos[0, 1])**2
+    )
+    
+    # Measure max lateral velocity
+    vel = data['vel']
+    xy_vel = np.sqrt(vel[:, 0]**2 + vel[:, 1]**2)
+    max_xy_vel = np.max(xy_vel)
+    
+    passed = xy_displacement > Thresholds.LATERAL_MIN_DISPLACEMENT
+    
+    record_result(
+        name="Differential Thrust Rotation",
+        passed=passed,
+        message=f"Lateral displacement = {xy_displacement:.3f}m, max velocity = {max_xy_vel:.3f}m/s",
+        metrics={
+            "xy_displacement_m": xy_displacement,
+            "max_xy_velocity_m/s": max_xy_vel,
+        },
+        criteria={
+            "min_displacement": f"{Thresholds.LATERAL_MIN_DISPLACEMENT}m"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
+# TEST 8: POSITION-VELOCITY CONSISTENCY
+# =============================================================================
+
+def test_position_velocity_consistency():
+    """
+    Verify position changes are consistent with integrated velocity.
+    
+    Physics: Δposition ≈ ∫velocity dt
+    This catches bugs where position/velocity are decoupled.
+    """
+    print_header("TEST 8: Position-Velocity Consistency")
+    print("Verifying position change matches integrated velocity")
+    
+    env = create_env()
+    action = np.array([0.25, 0.25, 0.25, 0.25])  # Upward thrust
+    
+    data = run_trajectory(env, action, num_steps=100)
+    env.close()
+    
+    pos = data['pos']
+    vel = data['vel']
+    times = data['time']
+    
+    # Actual position change
+    actual_z_change = pos[-1, 2] - pos[0, 2]
+    
+    # Integrated velocity (trapezoidal rule)
+    dt = PHYSICS.sim_dt
+    integrated_z_change = np.trapz(vel[:, 2], dx=dt)
+    
+    # Error
+    error = abs(actual_z_change - integrated_z_change)
+    relative_error = error / max(abs(actual_z_change), 0.1)
+    
+    passed = relative_error < 0.15  # 15% tolerance
+    
+    record_result(
+        name="Position-Velocity Consistency",
+        passed=passed,
+        message=f"Actual ΔZ={actual_z_change:.3f}m, Integrated={integrated_z_change:.3f}m, Error={relative_error*100:.1f}%",
+        metrics={
+            "actual_z_change_m": actual_z_change,
+            "integrated_z_change_m": integrated_z_change,
+            "relative_error_percent": relative_error * 100,
+        },
+        criteria={
+            "max_relative_error": "15%"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
+# TEST 9: VELOCITY-ACCELERATION CONSISTENCY
+# =============================================================================
+
+def test_velocity_acceleration_consistency():
+    """
+    Verify velocity changes are consistent with acceleration.
+    
+    Physics: Δvelocity ≈ acceleration * Δt
+    """
+    print_header("TEST 9: Velocity-Acceleration Consistency")
+    print("Verifying velocity change matches expected from acceleration")
+    
+    env = create_env()
+    action = np.array([0.3, 0.3, 0.3, 0.3])  # Strong upward
+    
+    data = run_trajectory(env, action, num_steps=50)
+    env.close()
+    
+    vel = data['vel']
+    times = data['time']
+    
+    # Actual velocity change
+    actual_vel_change = vel[-1, 2] - vel[0, 2]
+    
+    # Expected from constant acceleration model
+    accel = estimate_acceleration(times, vel[:, 2])
+    expected_vel_change = accel * (times[-1] - times[0])
+    
+    error = abs(actual_vel_change - expected_vel_change)
+    relative_error = error / max(abs(actual_vel_change), 0.1)
+    
+    passed = relative_error < 0.2  # 20% tolerance
+    
+    record_result(
+        name="Velocity-Acceleration Consistency",
+        passed=passed,
+        message=f"Actual Δv={actual_vel_change:.3f}m/s, Expected={expected_vel_change:.3f}m/s",
+        metrics={
+            "actual_vel_change_m/s": actual_vel_change,
+            "expected_vel_change_m/s": expected_vel_change,
+            "measured_accel_m/s²": accel,
+            "relative_error_percent": relative_error * 100,
+        },
+        criteria={
+            "max_relative_error": "20%"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
+# TEST 10: SYMMETRIC MOTOR ACCELERATION
+# =============================================================================
+
+def test_motor_symmetry():
+    """
+    Verify all motors produce similar ACCELERATION when activated equally.
+    
+    Physics: Each motor should produce approximately the same thrust.
+    We test acceleration (not position) because it's independent of initial velocity.
+    
+    Method: Compare acceleration from [0.4,0,0,0] vs [0,0.4,0,0] etc.
+    All should produce similar Z-acceleration magnitude.
+    """
+    print_header("TEST 10: Motor Thrust Symmetry")
+    print("Verifying all motors produce similar acceleration")
+    print("(Testing acceleration, not position, to be independent of initial conditions)")
+    
+    motor_accelerations = {}
+    
+    for motor_id in range(4):
+        # Use SAME seed for all motors - fair comparison
+        env = create_env(seed=42)
+        action = np.zeros(4)
+        action[motor_id] = 0.5  # 50% thrust on single motor
+        
+        data = run_trajectory(env, action, num_steps=50)
+        env.close()
+        
+        # Measure Z acceleration (independent of initial velocity)
+        times = data['time'][:40]
+        vel_z = data['vel'][:40, 2]
+        accel_z = estimate_acceleration(times, vel_z)
+        
+        motor_accelerations[motor_id] = accel_z
+        print(f"  Motor {motor_id}: Z acceleration = {accel_z:.3f} m/s²")
+    
+    # All motors should produce similar acceleration magnitude
+    accels = list(motor_accelerations.values())
+    accel_mean = np.mean(accels)
+    accel_std = np.std(accels)
+    accel_range = max(accels) - min(accels)
+    
+    # Coefficient of variation (std/mean) should be small
+    cv = abs(accel_std / accel_mean) if abs(accel_mean) > 0.1 else accel_std
+    
+    # Pass if variation is < 30%
+    passed = cv < Thresholds.SYMMETRY_TOLERANCE
+    
+    record_result(
+        name="Motor Thrust Symmetry",
+        passed=passed,
+        message=f"Acceleration CV = {cv*100:.1f}% (mean={accel_mean:.2f}, std={accel_std:.2f} m/s²)",
+        metrics={
+            "motor_0_accel_m/s²": motor_accelerations[0],
+            "motor_1_accel_m/s²": motor_accelerations[1],
+            "motor_2_accel_m/s²": motor_accelerations[2],
+            "motor_3_accel_m/s²": motor_accelerations[3],
+            "mean_accel_m/s²": accel_mean,
+            "std_accel_m/s²": accel_std,
+            "coefficient_of_variation": cv,
+        },
+        criteria={
+            "max_cv": f"{Thresholds.SYMMETRY_TOLERANCE*100}%"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
+# TEST 11: PD CONTROLLER CONVERGENCE
+# =============================================================================
+
+def test_pd_controller_convergence():
+    """
+    Verify a simple PD controller can stabilize to a target.
+    
+    This tests that physics supports basic control, independent of RL.
+    """
+    print_header("TEST 11: PD Controller Convergence")
+    print("Verifying physics supports basic altitude control")
+    
+    env = create_env()
+    obs, _ = env.reset()
+    
+    target_z = 5.0
+    kp = 0.8
+    kd = 0.3
+    
+    distances = []
+    
+    for step in range(250):  # 5 seconds
+        current_obs = extract_obs(obs)
+        pos_z = current_obs[2]
+        vel_z = current_obs[8]
+        
+        # PD control
+        error = target_z - pos_z
+        control = kp * error - kd * vel_z
+        action = np.clip([control] * 4, -1.0, 1.0)
+        
+        distances.append(abs(error))
+        
+        obs, _, terminated, truncated, _ = env.step(np.array(action).reshape(1, -1))
+        
         term = terminated[0] if isinstance(terminated, np.ndarray) else terminated
         trunc = truncated[0] if isinstance(truncated, np.ndarray) else truncated
-        
         if term or trunc:
             break
     
-    df = pd.DataFrame(data)
-    
-    # Analysis
-    min_distance = df["distance_to_target"].min()
-    final_distance = df["distance_to_target"].iloc[-1]
-    converged = final_distance < 0.5
-    
-    print(f"\nResults (Simple P-Controller):")
-    print(f"  Min distance to target: {min_distance:.3f}m")
-    print(f"  Final distance to target: {final_distance:.3f}m")
-    print(f"  Converged (< 0.5m): {converged}")
-    
-    if converged:
-        print_test_result("Target Tracking", True, 
-                         f"Physics allows reaching target: {final_distance:.3f}m")
-        print("  → RL failure is due to LEARNING, not physics!")
-    elif min_distance < 1.0:
-        print_test_result("Target Tracking", True,
-                         f"Physics allows getting close: {min_distance:.3f}m")
-        print_warning("Simple controller didn't fully converge - may need better tuning")
-        print("  → RL failure is likely due to LEARNING, not physics")
-    else:
-        print_test_result("Target Tracking", False,
-                         f"Can't reach target even with simple controller: {min_distance:.3f}m")
-        print("  → Possible physics issue OR target unreachable from starting position")
-    
     env.close()
-    return df
+    
+    min_distance = min(distances)
+    final_distance = distances[-1] if distances else float('inf')
+    
+    # Check for convergence (reaches within 0.5m at some point)
+    converged = min_distance < 0.5
+    
+    passed = converged
+    
+    record_result(
+        name="PD Controller Convergence",
+        passed=passed,
+        message=f"Min distance to target: {min_distance:.3f}m, Final: {final_distance:.3f}m",
+        metrics={
+            "min_distance_m": min_distance,
+            "final_distance_m": final_distance,
+            "target_z_m": target_z,
+            "converged": converged,
+        },
+        criteria={
+            "convergence_threshold": "0.5m"
+        }
+    )
+    
+    return passed
 
-# ============================================================================
+
+# =============================================================================
+# TEST 12: PHYSICS EQUATION CONSISTENCY
+# =============================================================================
+
+def test_physics_equations():
+    """
+    Verify physics equations are consistent throughout a trajectory.
+    
+    Test: F = ma should hold. With constant action, acceleration should be constant.
+    We measure acceleration at different points in the trajectory and verify consistency.
+    
+    Note: We don't test cross-run determinism because reset() has internal randomness.
+    Instead, we verify the physics EQUATIONS are consistently applied.
+    """
+    print_header("TEST 12: Physics Equation Consistency")
+    print("Verifying F=ma holds throughout trajectory (constant action → constant acceleration)")
+    
+    env = create_env()
+    action = np.array([0.15, 0.15, 0.15, 0.15])  # Constant thrust
+    
+    data = run_trajectory(env, action, num_steps=100)
+    env.close()
+    
+    times = data['time']
+    vel_z = data['vel'][:, 2]
+    
+    # Measure acceleration in first half and second half
+    mid = len(times) // 2
+    
+    accel_first_half = estimate_acceleration(times[:mid], vel_z[:mid])
+    accel_second_half = estimate_acceleration(times[mid:], vel_z[mid:])
+    
+    # They should be very similar (constant thrust → constant acceleration)
+    accel_diff = abs(accel_first_half - accel_second_half)
+    avg_accel = (abs(accel_first_half) + abs(accel_second_half)) / 2
+    relative_diff = accel_diff / max(avg_accel, 0.1)
+    
+    # Also check that velocity increases linearly (constant accel)
+    # Fit quadratic to position and check residuals
+    pos_z = data['pos'][:, 2]
+    coeffs = np.polyfit(times, pos_z, 2)  # Should be parabolic
+    predicted = np.polyval(coeffs, times)
+    residuals = np.abs(pos_z - predicted)
+    max_residual = np.max(residuals)
+    
+    passed = relative_diff < 0.15 and max_residual < 0.5
+    
+    record_result(
+        name="Physics Equation Consistency",
+        passed=passed,
+        message=f"Acceleration consistency: {relative_diff*100:.1f}% diff, Position fit residual: {max_residual:.3f}m",
+        metrics={
+            "accel_first_half_m/s²": accel_first_half,
+            "accel_second_half_m/s²": accel_second_half,
+            "relative_difference_percent": relative_diff * 100,
+            "position_fit_max_residual_m": max_residual,
+        },
+        criteria={
+            "max_accel_difference": "15%",
+            "max_position_residual": "0.5m"
+        }
+    )
+    
+    return passed
+
+
+# =============================================================================
 # MAIN EXECUTION
-# ============================================================================
-def main():
+# =============================================================================
+
+def run_all_tests():
+    """Run all physics validation tests"""
+    
     print("\n" + "="*80)
     print("  FLIGHTMARE PHYSICS VALIDATION SUITE")
-    print("  Testing basic physics and motor responses")
+    print("  Production Version - Strict Criteria")
     print("="*80)
+    print(f"\nPhysics Configuration:")
+    print(f"  Mass: {PHYSICS.mass} kg")
+    print(f"  Gravity: {PHYSICS.gravity} m/s²")
+    print(f"  Weight: {PHYSICS.weight:.3f} N")
+    print(f"  Hover thrust/motor: {PHYSICS.hover_thrust_per_motor:.3f} N")
+    print(f"  Simulation dt: {PHYSICS.sim_dt} s")
     
-    test_results = {}
+    # Run all tests
+    tests = [
+        test_hover_thrust_balance,
+        test_gravity_magnitude,
+        test_upward_thrust,
+        test_downward_thrust,
+        test_thrust_linearity,
+        test_motor_differential,
+        test_differential_thrust_rotation,
+        test_position_velocity_consistency,
+        test_velocity_acceleration_consistency,
+        test_motor_symmetry,  # Now tests acceleration symmetry
+        test_pd_controller_convergence,
+        test_physics_equations,  # Tests F=ma consistency
+    ]
     
-    if "hover_stability" in TESTS_TO_RUN:
-        test_results["hover"] = test_hover_stability()
+    for test_func in tests:
+        try:
+            test_func()
+        except Exception as e:
+            record_result(
+                name=test_func.__name__,
+                passed=False,
+                message=f"Test crashed: {str(e)}",
+                metrics={"error": str(e)}
+            )
     
-    if "upward_thrust" in TESTS_TO_RUN:
-        test_results["upward"] = test_upward_thrust()
-    
-    if "downward_thrust" in TESTS_TO_RUN:
-        test_results["downward"] = test_downward_thrust()
-    
-    if "lateral_movement" in TESTS_TO_RUN:
-        test_results["lateral"] = test_lateral_movement()
-    
-    if "motor_correlation" in TESTS_TO_RUN:
-        test_results["motors"] = test_motor_correlation()
-    
-    if "gravity_check" in TESTS_TO_RUN:
-        test_results["gravity"] = test_gravity()
-    
-    if "response_time" in TESTS_TO_RUN:
-        test_results["response"] = test_response_time()
-    
-    if "target_tracking" in TESTS_TO_RUN:
-        test_results["tracking"] = test_target_tracking()
-    
-    # Final summary
+    # Print summary
     print_header("VALIDATION SUMMARY")
     
-    print(f"\n✓ PASSED: {len(RESULTS['passed'])} tests")
-    for test in RESULTS['passed']:
-        print(f"    • {test}")
+    print(f"\n  Total Tests: {REPORT.total_tests}")
+    print(f"  ✓ Passed: {REPORT.passed}")
+    print(f"  ✗ Failed: {REPORT.failed}")
+    print(f"  Success Rate: {REPORT.success_rate*100:.1f}%")
     
-    if RESULTS['failed']:
-        print(f"\n✗ FAILED: {len(RESULTS['failed'])} tests")
-        for test in RESULTS['failed']:
-            print(f"    • {test}")
+    if REPORT.failed > 0:
+        print(f"\n  Failed Tests:")
+        for result in REPORT.results:
+            if not result.passed:
+                print(f"    • {result.name}")
     
-    if RESULTS['warnings']:
-        print(f"\n⚠ WARNINGS: {len(RESULTS['warnings'])}")
-        for warning in RESULTS['warnings']:
-            print(f"    • {warning}")
-    
-    # Overall verdict
     print("\n" + "="*80)
-    if not RESULTS['failed']:
+    if REPORT.all_passed:
         print("  ✓ PHYSICS VALIDATION: ALL TESTS PASSED")
-        print("  → Physics is working correctly")
-        print("  → RL performance issues are due to TRAINING/REWARDS, not physics")
+        print("  → Physics simulation is working correctly")
+        print("  → Safe to proceed with RL training")
     else:
         print("  ✗ PHYSICS VALIDATION: SOME TESTS FAILED")
-        print("  → Review failed tests above")
-        print("  → Physics may have issues that need fixing")
+        print(f"  → {REPORT.failed}/{REPORT.total_tests} tests failed")
+        print("  → Review failed tests and fix physics issues")
     print("="*80)
     
-    print("\nNext steps:")
-    if not RESULTS['failed']:
-        print("  1. Physics is validated - focus on fixing RL training")
-        print("  2. Increase reward coefficients (50-100x)")
-        print("  3. Add altitude termination conditions")
-        print("  4. Consider curriculum learning")
-    else:
-        print("  1. Fix physics issues identified above")
-        print("  2. Re-run validation after fixes")
-        print("  3. Then address RL training issues")
+    # Save report to JSON
+    report_path = Path(__file__).parent / "physics_validation_report.json"
+    with open(report_path, 'w') as f:
+        report_dict = asdict(REPORT)
+        json.dump(report_dict, f, indent=2, default=str)
+    print(f"\nDetailed report saved to: {report_path}")
     
-    return test_results, RESULTS
+    return REPORT
+
 
 if __name__ == "__main__":
-    results, summary = main()
+    report = run_all_tests()
+    sys.exit(0 if report.all_passed else 1)

@@ -1,0 +1,168 @@
+{
+  "model_path": "/root/flightmare/flightrl_modern/models/target_reaching/best_model.zip",
+  "run_id": "unknown",
+  "timestamp": "2025-11-30_125205",
+  "episodes": [
+    {
+      "episode": 0,
+      "total_reward": 9.077712625497952,
+      "episode_length": 1000,
+      "max_altitude_deviation": 0.5995287895202637,
+      "max_horizontal_deviation": 1.161097022318422,
+      "terminal_reason": "truncated",
+      "csv_file": "rollout_ep00.csv",
+      "mean_reward_per_step": 0.009077712625497952,
+      "final_position": [
+        -0.11089332401752472,
+        0.15306168794631958,
+        4.809126853942871
+      ],
+      "initial_position": [
+        0.9524036645889282,
+        0.40524864196777344,
+        4.209598064422607
+      ],
+      "target_position": [
+        0.0,
+        0.0,
+        5.0
+      ],
+      "final_distance_to_target": 0.2686219788371352,
+      "min_distance_to_target": 0.26861232436427834
+    },
+    {
+      "episode": 1,
+      "total_reward": 8.861384174320847,
+      "episode_length": 1000,
+      "max_altitude_deviation": 0.3348727226257324,
+      "max_horizontal_deviation": 1.3443152098209776,
+      "terminal_reason": "truncated",
+      "csv_file": "rollout_ep01.csv",
+      "mean_reward_per_step": 0.008861384174320848,
+      "final_position": [
+        -0.11089345812797546,
+        0.153061643242836,
+        4.8091278076171875
+      ],
+      "initial_position": [
+        0.8781673908233643,
+        -0.7574008703231812,
+        4.474255084991455
+      ],
+      "target_position": [
+        0.0,
+        0.0,
+        5.0
+      ],
+      "final_distance_to_target": 0.2686213310829943,
+      "min_distance_to_target": 0.26861254383027305
+    },
+    {
+      "episode": 2,
+      "total_reward": 9.185422734357417,
+      "episode_length": 1000,
+      "max_altitude_deviation": 0.6274018287658691,
+      "max_horizontal_deviation": 0.5984823352828763,
+      "terminal_reason": "truncated",
+      "csv_file": "rollout_ep02.csv",
+      "mean_reward_per_step": 0.009185422734357417,
+      "final_position": [
+        -0.1108933761715889,
+        0.1530616730451584,
+        4.809127330780029
+      ],
+      "initial_position": [
+        -0.26132357120513916,
+        -0.4200896620750427,
+        4.18172550201416
+      ],
+      "target_position": [
+        0.0,
+        0.0,
+        5.0
+      ],
+      "final_distance_to_target": 0.268621653053645,
+      "min_distance_to_target": 0.2686125860024093
+    },
+    {
+      "episode": 3,
+      "total_reward": 9.155960884410888,
+      "episode_length": 1000,
+      "max_altitude_deviation": 0.9678158760070801,
+      "max_horizontal_deviation": 1.1269043493552133,
+      "terminal_reason": "truncated",
+      "csv_file": "rollout_ep03.csv",
+      "mean_reward_per_step": 0.009155960884410888,
+      "final_position": [
+        -0.11089319735765457,
+        0.15306155383586884,
+        4.809126377105713
+      ],
+      "initial_position": [
+        -0.18427199125289917,
+        0.983126163482666,
+        5.723972320556641
+      ],
+      "target_position": [
+        0.0,
+        0.0,
+        5.0
+      ],
+      "final_distance_to_target": 0.26862218895624546,
+      "min_distance_to_target": 0.20138288694297019
+    },
+    {
+      "episode": 4,
+      "total_reward": 9.183493359945714,
+      "episode_length": 1000,
+      "max_altitude_deviation": 0.33052635192871094,
+      "max_horizontal_deviation": 0.46885257821806076,
+      "terminal_reason": "truncated",
+      "csv_file": "rollout_ep04.csv",
+      "mean_reward_per_step": 0.009183493359945715,
+      "final_position": [
+        -0.11095301061868668,
+        0.15307866036891937,
+        4.809445858001709
+      ],
+      "initial_position": [
+        0.16713035106658936,
+        0.179144024848938,
+        5.13997220993042
+      ],
+      "target_position": [
+        0.0,
+        0.0,
+        5.0
+      ],
+      "final_distance_to_target": 0.2684297447348155,
+      "min_distance_to_target": 0.16681991037162533
+    }
+  ],
+  "config": {
+    "deterministic": true,
+    "max_steps": 1000,
+    "seed": null,
+    "dt": 0.02,
+    "obs_pos_start": 0,
+    "obs_pos_end": 3,
+    "obs_euler_start": 3,
+    "obs_euler_end": 6,
+    "obs_vel_start": 6,
+    "obs_vel_end": 9,
+    "obs_omega_start": 9,
+    "obs_omega_end": 12,
+    "obs_target_rel_start": 12,
+    "obs_target_rel_end": 15,
+    "obs_target_dist": 15,
+    "obs_target_dir_start": 16,
+    "obs_target_dir_end": 18,
+    "hover_goal": [
+      0.0,
+      0.0,
+      5.0
+    ]
+  },
+  "is_target_seeking": false,
+  "obs_dim": 12
+}

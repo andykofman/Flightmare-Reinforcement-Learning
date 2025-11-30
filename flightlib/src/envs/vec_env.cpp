@@ -41,7 +41,7 @@ void VecEnv<EnvBase>::init(void) {
   // create & setup environments
   const bool render = false;
   for (int i = 0; i < num_envs_; i++) {
-    envs_.push_back(std::make_unique<EnvBase>());
+    envs_.push_back(std::make_unique<EnvBase>(cfg_));
   }
 
   // set Unity

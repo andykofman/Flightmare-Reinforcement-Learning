@@ -45,6 +45,7 @@ class QuadrotorEnv final : public EnvBase {
 
   QuadrotorEnv();
   QuadrotorEnv(const std::string &cfg_path);
+  QuadrotorEnv(const YAML::Node &cfg_node);
   ~QuadrotorEnv();
 
   // - public OpenAI-gym-style functions

@@ -71,6 +71,21 @@ def make_flight_env(
             "flightlib/configs/vec_env.yaml"
         )
         cfg = YAML().load(open(default_config, 'r'))
+        
+        # Merge quadrotor_env.yaml to get quadrotor_dynamics section
+        quadrotor_config = os.path.join(
+            flightmare_path,
+            "flightlib/configs/quadrotor_env.yaml"
+        )
+        if os.path.exists(quadrotor_config):
+            quad_cfg = YAML().load(open(quadrotor_config, 'r'))
+            # Merge quadrotor sections into main config
+            if "quadrotor_env" in quad_cfg:
+                cfg["quadrotor_env"] = quad_cfg["quadrotor_env"]
+            if "quadrotor_dynamics" in quad_cfg:
+                cfg["quadrotor_dynamics"] = quad_cfg["quadrotor_dynamics"]
+            if "rl" in quad_cfg:
+                cfg["rl"] = quad_cfg["rl"]
     
     # Apply overrides
 
@@ -115,8 +130,11 @@ def make_flight_env(
     # Create flightgym backend
     quad_env = QuadrotorEnv_v1(config_yaml, False)
     
+    # Extract max_episode_steps from kwargs if provided, otherwise use default
+    max_episode_steps = kwargs.pop("max_episode_steps", 300)
+    
     # Wrap in Gymnasium interface
-    env = FlightEnvVec(quad_env)
+    env = FlightEnvVec(quad_env, max_episode_steps=max_episode_steps)
     
     # Set seed if provided
     if seed is not None:
@@ -150,6 +168,9 @@ def make_flight_env_for_sb3(
         >>> from stable_baselines3.common.vec_env import DummyVecEnv
         >>> env = DummyVecEnv([lambda: make_flight_env_for_sb3() for _ in range(4)])
     """
+    # Extract max_episode_steps if provided
+    max_episode_steps = kwargs.pop("max_episode_steps", 300)
+    
     # For SB3, we always want num_envs=1 per process
     env = make_flight_env(
         config_path=config_path,
@@ -157,12 +178,9 @@ def make_flight_env_for_sb3(
         num_envs=1,
         num_threads=1,
         seed=seed,
+        max_episode_steps=max_episode_steps,
         **kwargs
     )
-    
-    # Optionally wrap with TimeLimit
-    if "max_episode_steps" in kwargs:
-        env = gym.wrappers.TimeLimit(env, max_episode_steps=kwargs["max_episode_steps"])
     
     return env
 
