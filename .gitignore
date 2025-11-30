@@ -36,17 +36,13 @@ cloud_setup.sh
 *.pt
 *.h5
 *.ckpt
-*.zip
-flightrl_modern/examples/models/
-flightrl_modern/examples/logs/
+
 *.tfevents.*
 *.npz
 
 # Large model files and replay buffers (exceed GitHub 100MB limit)
 *.pkl
-flightrl_modern/examples/models/**/*.pkl
-flightrl_modern/examples/models/**/*.zip
-flightrl_modern/examples/logs/**/*
+
 *.h5
 *.ckpt
 *.pt
