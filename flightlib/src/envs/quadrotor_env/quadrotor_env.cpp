@@ -62,10 +62,11 @@ bool QuadrotorEnv::reset(Ref<Vector<>> obs, const bool random) {
     quad_state_.x(QS::VELY) = uniform_dist_(random_gen_);
     quad_state_.x(QS::VELZ) = uniform_dist_(random_gen_);
     // reset orientation
-    quad_state_.x(QS::ATTW) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::ATTX) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::ATTY) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::ATTZ) = uniform_dist_(random_gen_);
+    // Changing to Realistic Initial Conditions: Small random tilts around level (±5° = 0.087 rad)
+    quad_state_.x(QS::ATTW) = 1.0; // start near identity quaternion
+    quad_state_.x(QS::ATTX) = uniform_dist_(random_gen_) * 0.087; // ±5° roll
+    quad_state_.x(QS::ATTY) = uniform_dist_(random_gen_) * 0.087; // ±5° pitch
+    quad_state_.x(QS::ATTZ) = uniform_dist_(random_gen_) * 0.087; // ±5° yaw
     quad_state_.qx /= quad_state_.qx.norm();
   }
   // reset quadrotor with random states
@@ -146,15 +147,22 @@ Survival Bonus: Small positive reward for staying alive
   Scalar total_reward =
     pos_reward + ori_reward + lin_vel_reward + ang_vel_reward + act_reward;
 
-  // survival reward
-  total_reward += 0.1;
+  // survival reward (REDUCED from 0.1 to 0.01 to prevent dominance)
+  total_reward += 0.01;
+
+  // SUCCESS BONUS: reward for achieving stable hover at goal
+  Scalar dist_to_goal = (quad_state_.p - goal_state_.segment<3>(0)).norm();
+  Scalar vel_magnitude = quad_state_.v.norm();
+  if (dist_to_goal < 0.1 && vel_magnitude < 0.1) {
+    total_reward += 1.0;  // Strong incentive to reach and stabilize at goal
+  }
 
   return total_reward;
 }
 
 bool QuadrotorEnv::isTerminalState(Scalar &reward) {
-  if (quad_state_.x(QS::POSZ) <= 0.02) {
-    reward = -0.02;
+  if (quad_state_.x(QS::POSZ) <= 0.05) {
+    reward = -10.0;  // Increased penalty and raised threshold for crash detection
     return true;
   }
   reward = 0.0;
