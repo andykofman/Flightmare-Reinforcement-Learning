@@ -33,3 +33,5 @@ rl:
   ang_vel_coeff: -0.01   # Angular velocity penalty
   act_coeff: -0.001      # Small action penalty (don't over-penalize control effort)
 
+
+
