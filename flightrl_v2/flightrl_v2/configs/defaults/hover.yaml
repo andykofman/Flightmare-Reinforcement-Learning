@@ -1,0 +1,50 @@
+# Hover task configuration
+# Default parameters for the hover task.
+
+task:
+  name: hover
+  max_episode_steps: 300
+
+  # Target position for the hover task
+  target:
+    x: 0.0
+    y: 0.0
+    z: 5.0
+  
+  # Success criteria
+  success:
+    position_tolerance: 0.2  # meters
+    velocity_threshold: 0.1  # meters/second
+    hold_time: 2.0            # seconds
+
+# Reward configuration
+rewards:
+  position_weight: 1.0
+  velocity_weight: 0.1
+  control_weight: 0.1
+  # success_bonus: 100.0
+
+training:
+  algorithm: sac
+  total_timesteps: 1000000
+  n_envs: 1
+  learning_rate: 0.0003
+  buffer_size: 1000000
+  batch_size: 256
+  gamma: 0.99
+  tau: 0.005
+  seed: 42
+
+  # Directories (log_dir will default to save_dir/logs if not specified)
+  save_dir: "./models/hover_sac"
+  # log_dir: "./models/hover_sac/logs"  # Optional: auto-constructed if omitted
+
+  # Checkpointing
+  save_freq: 10000
+  eval_freq: 10000
+  n_eval_episodes: 10
+
+environment:
+  # Environment-specific settings
+  sim_dt: 0.02  # 50 Hz
+  render: false

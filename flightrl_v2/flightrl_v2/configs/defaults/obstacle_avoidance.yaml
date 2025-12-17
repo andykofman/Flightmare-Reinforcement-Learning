@@ -1,0 +1,87 @@
+# Obstacle Avoidance Task Configuration
+# PLACEHOLDER - Phase 2/3 Implementation
+# TODO: Complete when obstacle environment is implemented
+
+task:
+  name: obstacle_avoidance
+  max_episode_steps: 500  # Longer episodes for navigation
+
+  # Target position
+  target:
+    x: 10.0
+    y: 0.0
+    z: 5.0
+
+  # Success criteria
+  success:
+    position_threshold: 0.5
+    velocity_threshold: 0.5
+    hold_time: 0.5  # Shorter hold time
+
+  # Reward weights
+  rewards:
+    distance_weight: 1.0
+    velocity_weight: 0.1
+    action_weight: 0.01
+    collision_penalty: 100.0
+    proximity_penalty_weight: 1.0
+    goal_bonus: 200.0
+
+  # Safety settings
+  safety:
+    min_obstacle_distance: 0.5  # meters
+
+# TODO: Obstacle configuration
+obstacles:
+  # Placeholder for obstacle definitions
+  type: "none"  # none, static, dynamic
+  # static_obstacles: []
+  # dynamic_obstacles: []
+
+# TODO: Sensor configuration
+sensors:
+  lidar:
+    enabled: false  # TODO: Enable when implemented
+    num_rays: 10
+    max_range: 10.0
+  depth_camera:
+    enabled: false  # TODO: Enable when implemented
+    width: 64
+    height: 48
+
+# TODO: Curriculum configuration
+curriculum:
+  enabled: false  # TODO: Enable when implemented
+  levels:
+    - name: "empty"
+      obstacles: 0
+    - name: "sparse"
+      obstacles: 3
+    - name: "moderate"
+      obstacles: 6
+    - name: "dense"
+      obstacles: 10
+  advancement_threshold: 0.8
+
+training:
+  algorithm: sac
+  total_timesteps: 2000000  # More training for complex task
+  n_envs: 4
+  learning_rate: 0.0003
+  buffer_size: 1000000
+  batch_size: 256
+  gamma: 0.99
+  tau: 0.005
+  seed: 42
+
+  # Directories (log_dir will default to save_dir/logs if not specified)
+  save_dir: "./models/obstacle_avoidance_sac"
+  # log_dir: "./models/obstacle_avoidance_sac/logs"  # Optional: auto-constructed if omitted
+
+  save_freq: 10000
+  eval_freq: 10000
+  n_eval_episodes: 10
+
+environment:
+  sim_dt: 0.02
+  render: false

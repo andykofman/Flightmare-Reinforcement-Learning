@@ -1,0 +1,54 @@
+# Target Reaching Task Configuration
+# Settings for training navigation to a target position
+
+task:
+  name: target_reaching
+  max_episode_steps: 300
+
+  # Target position
+  target:
+    x: 0.0
+    y: 0.0
+    z: 5.0
+
+  # Spawn configuration (random initial positions)
+  spawn:
+    radius: 5.0  # meters from target
+    height_min: 2.0
+    height_max: 8.0
+
+  # Success criteria
+  success:
+    position_threshold: 0.5  # meters
+    velocity_threshold: 0.5  # m/s
+    hold_time: 1.0  # seconds
+
+  # Reward weights
+  rewards:
+    distance_weight: 1.0
+    velocity_weight: 0.1
+    action_weight: 0.01
+    goal_bonus: 100.0
+
+training:
+  algorithm: sac
+  total_timesteps: 1000000
+  n_envs: 4
+  learning_rate: 0.0003
+  buffer_size: 1000000
+  batch_size: 256
+  gamma: 0.99
+  tau: 0.005
+  seed: 42
+
+  # Directories (log_dir will default to save_dir/logs if not specified)
+  save_dir: "./models/target_reaching_sac"
+  # log_dir: "./models/target_reaching_sac/logs"  # Optional: auto-constructed if omitted
+
+  save_freq: 10000
+  eval_freq: 10000
+  n_eval_episodes: 10
+
+environment:
+  sim_dt: 0.02
+  render: false

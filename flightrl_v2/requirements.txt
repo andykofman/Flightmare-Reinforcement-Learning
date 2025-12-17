@@ -1,0 +1,26 @@
+# Modern RL dependencies for Flightmare
+# PyTorch + Stable-Baselines3 + Gymnasium stack
+
+# Core RL libraries
+gymnasium>=0.28.0
+stable-baselines3[extra]>=2.0.0
+sb3-contrib>=2.0.0
+
+# PyTorch (CPU version by default; GPU version installed separately in Docker)
+torch>=2.0.0
+
+# Utilities
+numpy>=1.21.0,<2.0.0
+matplotlib>=3.5.0
+tensorboard>=2.12.0
+ruamel.yaml>=0.17.0
+
+# Analysis and visualization
+pandas>=1.5.0
+pillow>=9.0.0
+plotly>=5.0.0
+
+# Optional but recommended
+tqdm>=4.65.0
+imageio>=2.25.0
+imageio-ffmpeg>=0.4.8
