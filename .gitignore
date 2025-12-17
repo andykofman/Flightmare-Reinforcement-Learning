@@ -29,6 +29,14 @@ flightmare_colab_training.ipynb
 flightrl_modern.zip
 IMPLEMENTATION_SUMMARY.md
 cloud_setup.sh
+AI_AGENT_PROMPT.md
+CLAUDE.md
+
+# Internal documentation and presentations
+/internal_docs/
+/presentations/node_modules/
+/.claude/
+
 
 # Model files and checkpoints (too large for GitHub)
 *.pkl
