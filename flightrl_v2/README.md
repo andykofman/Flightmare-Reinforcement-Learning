@@ -574,6 +574,18 @@ MIT License - See LICENSE file for details
 
 ---
 
-**Version**: 2.0.0  
-**Last Updated**: December 2025
+**Version**: 2.1.0  
+**Last Updated**: December 17, 2025
+
+## Recent Updates (v2.1.0)
+
+### Unified Logging System
+- **LogManager**: Centralized logging with timestamped run directories (`logs/project/algorithm_timestamp/`)
+- **Metadata Tracking**: Automatic tracking of hyperparameters, metrics, git commit/branch info
+- **Alias System**: Use `@latest`, `@best`, or custom aliases instead of full model paths
+- **Best Model Tracking**: Automatic tracking and symlinking of best performing model based on success rate
+- **Utility Scripts**: `list_runs.py` for viewing and comparing training runs
+- **Documentation**: Comprehensive logging system docs and usage examples
+
+For details, see [CHANGELOG.md](CHANGELOG.md)
 
