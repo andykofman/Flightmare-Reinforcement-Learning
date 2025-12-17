@@ -18,16 +18,18 @@
 
 This maintained edition includes significant updates and improvements to the original Flightmare project:
 
-### Modern Reinforcement Learning Stack
+### Modern Reinforcement Learning Stack (flightrl_v2)
 
-The legacy reinforcement learning implementation (`flightrl`) has been completely modernized in `flightrl_modern`:
+The legacy reinforcement learning implementation has been completely rewritten as **`flightrl_v2`** - a production-ready, modular framework:
 
-- **Replaced TensorFlow 1.x** with **PyTorch 2.0+** for better performance and active maintenance
-- **Upgraded from stable-baselines 2.x** to **Stable-Baselines3 2.0+** with improved APIs and optimizations
-- **Migrated from gym 0.11** to **Gymnasium 0.28+** (official successor to OpenAI Gym)
-- **Implemented SAC (Soft Actor-Critic)** as the default algorithm with full support for continuous control tasks
-- **Added comprehensive evaluation utilities** for policy testing and analysis
-- **Improved vectorized environment support** for faster training with multiple parallel environments
+- **Modern Python stack**: PyTorch 2.0+, Stable-Baselines3 2.0+, Gymnasium 0.28+
+- **Clean architecture**: Modular design with clear separation of concerns (core, envs, tasks, algorithms)
+- **Type-safe**: Comprehensive type hints throughout the codebase
+- **Well-tested**: Unit and integration tests with pytest
+- **Fully documented**: Complete API documentation and usage examples
+- **SAC algorithm**: Production-ready Soft Actor-Critic implementation for continuous control
+- **Multiple tasks**: Hover, target reaching, and obstacle avoidance (Phase 1+)
+- **Vectorized environments**: Fast parallel training with multiple environments
 
 ### Build System Improvements
 
@@ -71,77 +73,142 @@ See the [Docker Documentation](./docker/README.md) for detailed instructions, bu
 
 For manual installation, refer to the original [Flightmare Wiki](https://github.com/uzh-rpg/flightmare/wiki) and the [flightrl_modern README](./flightrl_modern/README.md).
 
-## Quick Start with Modern RL
+## Quick Start with flightrl_v2
 
-### Training a SAC Agent
+### Training a Target Reaching Agent
 
 ```python
-from flightrl_modern.algorithms import train_sac
+from flightrl_v2.envs import make_flight_env_for_sb3
+from stable_baselines3 import SAC
 
-# Train SAC agent on Flightmare environment
-model = train_sac(
-    total_timesteps=1000000,
-    n_envs=4,
-    seed=42,
-)
+# Create environment
+env = make_flight_env_for_sb3(seed=42, max_episode_steps=600)
 
-# Model automatically saved to ./models/sac/
+# Train SAC agent
+model = SAC("MlpPolicy", env, verbose=1)
+model.learn(total_timesteps=1_000_000)
+
+# Save model
+model.save("trained_policy")
 ```
 
 ### Command Line Training
 
 ```bash
-cd flightrl_modern/examples
-python train_sac.py --timesteps 1000000 --n_envs 4 --seed 42
+cd flightrl_v2/examples
+
+# Quick test run
+python 01_basic_training.py --timesteps 10000
+
+# Full training run (target reaching task)
+python 01_basic_training.py --timesteps 1000000 --n_envs 16 --max_episode_steps 600
 ```
 
-### Evaluation
+### Monitoring Training
 
 ```bash
-python evaluate_sac.py --model ./models/sac/best_model.zip --episodes 10 --render
+# View training progress in TensorBoard
+tensorboard --logdir logs/target_reaching
 ```
 
-See the [flightrl_modern README](./flightrl_modern/README.md) for complete documentation and examples.
+### Evaluation and Visualization
+
+```bash
+cd ../scripts
+
+# Evaluate trained model
+python evaluate.py --model ../models/target_reaching/best_model.zip --episodes 10
+
+# Generate 3D trajectory visualizations
+python -m flightrl_v2.tools.visualize_model \
+    --model models/target_reaching/best_model.zip \
+    --episodes 5
+```
+
+See the [flightrl_v2 README](./flightrl_v2/README.md) for complete documentation and examples.
 
 ## Project Structure
 
 ```
 flightmare/
 ├── flightlib/              # C++ physics engine (core simulation)
-├── flightrl_modern/        # Modern Python RL framework (NEW)
-│   ├── envs/              # Gymnasium-compatible environment wrappers
-│   ├── algorithms/        # Training algorithms (SAC, etc.)
-│   └── examples/          # Example scripts and training code
-├── flightrl/              # Legacy RL implementation (deprecated)
-├── docker/                # Docker build system (NEW)
+│   ├── include/           # Header files
+│   ├── src/               # Source files
+│   └── configs/           # Configuration files
+├── flightrl_v2/           # Modern Python RL framework (v2.0)
+│   ├── flightrl_v2/       # Main package
+│   │   ├── core/          # Base classes and types
+│   │   ├── envs/          # Gymnasium-compatible environments
+│   │   ├── tasks/         # Task definitions (hover, reaching, etc.)
+│   │   ├── algorithms/    # Training algorithms and callbacks
+│   │   ├── configs/       # Configuration management
+│   │   ├── tools/         # Utilities (visualization, etc.)
+│   │   └── sensors/       # Sensor interfaces (Phase 2+)
+│   ├── examples/          # Training examples and tutorials
+│   ├── scripts/           # Command-line tools
+│   ├── tests/             # Test suite
+│   └── docs/              # Package documentation
+├── docker/                # Docker build system
 │   ├── Dockerfile         # Multi-stage build definition
 │   ├── build_container.ps1 # Build script
 │   └── README.md          # Docker documentation
-└── docs/                  # Original documentation
+└── docs/                  # Original Flightmare documentation
 ```
 
-## Migration from Legacy Code
+## Getting Started with flightrl_v2
 
-If you're migrating from the old `flightrl` implementation:
+### Installation
 
-1. **Environment**: Use `flightrl_modern.envs.make_flight_env()` instead of legacy wrappers
-2. **Training**: Use `flightrl_modern.algorithms.train_sac()` or Stable-Baselines3 directly
-3. **Evaluation**: Use `flightrl_modern.algorithms.evaluate_policy()` for consistent evaluation
+```bash
+# Install flightlib (C++ backend)
+cd flightlib
+pip install -e .
 
-See the [flightrl_modern README](./flightrl_modern/README.md) for detailed migration notes.
+# Install flightrl_v2
+cd ../flightrl_v2
+pip install -e .
+```
+
+### Your First Training Run
+
+```bash
+cd flightrl_v2/examples
+python 01_basic_training.py --timesteps 10000  # Quick test
+```
+
+### Package Features
+
+- **Clean API**: Simple, intuitive interfaces for environment creation and training
+- **Multiple tasks**: Hover stabilization, target reaching, obstacle avoidance
+- **Flexible configuration**: YAML-based configuration system
+- **Comprehensive examples**: Step-by-step tutorials in `examples/` directory
+- **Full documentation**: See [flightrl_v2/README.md](./flightrl_v2/README.md)
+
+### Migration from Legacy Code
+
+If you have code using the old `flightrl` package:
+
+1. **Import changes**: `from flightrl_v2.envs import make_flight_env_for_sb3`
+2. **Environment creation**: Use Gymnasium API (returns 5-tuple: obs, reward, terminated, truncated, info)
+3. **Training**: Compatible with any Stable-Baselines3 algorithm
+4. **Configuration**: Use YAML config files in `flightlib/configs/`
+
+See the [flightrl_v2 README](./flightrl_v2/README.md) for detailed migration guide and examples.
 
 ## Documentation
 
 - **Main Documentation**: [Flightmare Documentation](https://flightmare.readthedocs.io/)
-- **Modern RL Package**: [flightrl_modern/README.md](./flightrl_modern/README.md)
+- **flightrl_v2 Package**: [flightrl_v2/README.md](./flightrl_v2/README.md)
+- **Training Examples**: [flightrl_v2/examples/README.md](./flightrl_v2/examples/README.md)
 - **Docker Build System**: [docker/README.md](./docker/README.md)
-- **Examples**: [flightrl_modern/examples/README.md](./flightrl_modern/examples/README.md)
+- **API Reference**: See docstrings in `flightrl_v2/flightrl_v2/`
 
 ## Updates
 
-- **2025-10-21**: Complete modernization of RL stack with PyTorch + Stable-Baselines3 + Gymnasium
-- **2025-11-07**: Docker-based build system with drag-and-drop setup
+- **2025-12-17**: **v2.0.0** - Complete rewrite as flightrl_v2 with modular architecture, comprehensive tests, and full documentation
+- **2025-11-07**: Docker-based build system with drag-and-drop setup and build verification
 - **2025-11-07**: All build issues resolved and verified
+- **2025-10-21**: Initial modernization of RL stack with PyTorch + Stable-Baselines3 + Gymnasium
 - **2020-11-17**: [Spotlight](https://youtu.be/8JyrjPLt8wo) Talk at CoRL 2020
 - **2020-09-04**: Original Flightmare release
 
@@ -160,11 +227,11 @@ If you use this code in a publication, please cite the following paper **[PDF](h
 
 ## Contributors
 
-### Modern RL Implementation
+### flightrl_v2 Implementation
 
-- **Ahmed Ali** - Modern RL stack implementation and Docker build system
+- **Ahmed Ali** - flightrl_v2 framework, modern RL stack, and Docker build system
   - Email: ali.a@aucegypt.edu
-  - GitHub: [github.com/andykofman](https://github.com/andykofman)
+  - GitHub: [Neurobotix](https://github.com/Neurobotix/Flightmare-Reinforcement-Learning)
 
 ### Original Flightmare
 
@@ -182,11 +249,12 @@ This project is released under the MIT License. Please review the [License file]
 
 This is a **maintained fork** of the original Flightmare project. The original repository at [uzh-rpg/flightmare](https://github.com/uzh-rpg/flightmare) is no longer actively maintained. This edition continues development with:
 
-- Active maintenance and bug fixes
-- Modern RL stack (PyTorch + Stable-Baselines3 + Gymnasium)
-- Improved build system with Docker support
-- Comprehensive documentation and examples
-- Regular updates and improvements
+- **v2.0.0 Release**: Production-ready flightrl_v2 framework
+- **Active maintenance**: Bug fixes and regular updates
+- **Modern architecture**: Clean, modular, type-safe Python codebase
+- **Comprehensive testing**: Unit and integration test suite
+- **Full documentation**: Complete guides, examples, and API reference
+- **Docker support**: Easy deployment and development environment
 
 ## Acknowledgments
 
